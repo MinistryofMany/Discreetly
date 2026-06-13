@@ -50,7 +50,12 @@ describe('db smoke', () => {
   it('rejects a duplicate rateCommitment in the same room', async () => {
     await expect(
       prisma.membershipLeaf.create({
-        data: { roomId, membershipId: (await firstMembership(roomId)).id, identityCommitment: 'IC3', rateCommitment: 'RC1' },
+        data: {
+          roomId,
+          membershipId: (await firstMembership(roomId)).id,
+          identityCommitment: 'IC3',
+          rateCommitment: 'RC1',
+        },
       }),
     ).rejects.toMatchObject({ code: 'P2002' });
   });

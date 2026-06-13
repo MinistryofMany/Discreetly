@@ -1,0 +1,14 @@
+# Machine-generated — never format
+pnpm-lock.yaml
+
+# Build outputs / caches
+node_modules
+dist
+build
+.next
+.svelte-kit
+.turbo
+coverage
+
+# Prisma generated migration SQL
+packages/*/prisma/migrations
