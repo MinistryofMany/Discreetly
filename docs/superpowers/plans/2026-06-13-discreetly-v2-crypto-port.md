@@ -28,23 +28,23 @@ The worktree lives under `/Users/atheartengineer/Nextcloud/workspace/Discreetly/
 
 These are the exact decimal outputs of the legacy functions; the parity tests assert against them:
 
-| call | output |
-|---|---|
-| `str2BigInt('')` | `0` |
-| `str2BigInt('Alpha Testers')` | `5183390837097462041516934787699` |
-| `str2BigInt('gm 🌅')` | `29111910844566661` |
-| `genId(0, 'Alpha Testers')` | `18165449002766348569087181317809972811560541873833072082773716372988104637535` |
-| `genId(42, 'general')` | `15305175996942493984876657405065573381055348967581108949886047442046564599825` |
-| `genId(1, 700)` | `6585934516913424527874756177614402393272149364854687834971917373045751390946` |
-| `getRateCommitmentHash(123n, 1)` | `1825367215715080944898610730329185918884251567885580835209236772238472514878` |
-| `getRateCommitmentHash(19014214495641488759237505126948346942972912379615652741039992445865937985n, 50)` | `8605271634723343760659286622282624455771371598881535798394442865683358678826` |
-| `getMessageHash('hello')` (`poseidon1([str2BigInt('hello')])`) | `14021998335275890241385849815772078196725001835760665002305519183140501905` |
-| `calculateSignalHash('hello')` | `50431049290266644231251360234089458127683824157542166152159614998166072810` |
-| `calculateSignalHash(JSON.stringify({ body: 'gm', type: 'TEXT' }))` | `101884730950471513996544060039004803867143945453357388976088785884555538236` |
-| `calculateSignalHash('')` | `349520125851268261087593898257781118122351904114639672919570969471416632740` |
-| `shamirRecovery(3n, 7n, 5n, 11n)` | `10944121435919637611123202872628637544274182200208017171849102093287904247809` |
-| `shamirRecovery(111111111111111111111n, 222222222222222222222n, 333333333333333333333n, 555555555555555555555n)` | `111111111111111111111` |
-| `getIdentityCommitmentFromSecret(12345n)` | `4267533774488295900887461483015112262021273608761099826938271132511348470966` |
+| call                                                                                                             | output                                                                          |
+| ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `str2BigInt('')`                                                                                                 | `0`                                                                             |
+| `str2BigInt('Alpha Testers')`                                                                                    | `5183390837097462041516934787699`                                               |
+| `str2BigInt('gm 🌅')`                                                                                            | `29111910844566661`                                                             |
+| `genId(0, 'Alpha Testers')`                                                                                      | `18165449002766348569087181317809972811560541873833072082773716372988104637535` |
+| `genId(42, 'general')`                                                                                           | `15305175996942493984876657405065573381055348967581108949886047442046564599825` |
+| `genId(1, 700)`                                                                                                  | `6585934516913424527874756177614402393272149364854687834971917373045751390946`  |
+| `getRateCommitmentHash(123n, 1)`                                                                                 | `1825367215715080944898610730329185918884251567885580835209236772238472514878`  |
+| `getRateCommitmentHash(19014214495641488759237505126948346942972912379615652741039992445865937985n, 50)`         | `8605271634723343760659286622282624455771371598881535798394442865683358678826`  |
+| `getMessageHash('hello')` (`poseidon1([str2BigInt('hello')])`)                                                   | `14021998335275890241385849815772078196725001835760665002305519183140501905`    |
+| `calculateSignalHash('hello')`                                                                                   | `50431049290266644231251360234089458127683824157542166152159614998166072810`    |
+| `calculateSignalHash(JSON.stringify({ body: 'gm', type: 'TEXT' }))`                                              | `101884730950471513996544060039004803867143945453357388976088785884555538236`   |
+| `calculateSignalHash('')`                                                                                        | `349520125851268261087593898257781118122351904114639672919570969471416632740`   |
+| `shamirRecovery(3n, 7n, 5n, 11n)`                                                                                | `10944121435919637611123202872628637544274182200208017171849102093287904247809` |
+| `shamirRecovery(111111111111111111111n, 222222222222222222222n, 333333333333333333333n, 555555555555555555555n)` | `111111111111111111111`                                                         |
+| `getIdentityCommitmentFromSecret(12345n)`                                                                        | `4267533774488295900887461483015112262021273608761099826938271132511348470966`  |
 
 ## File Structure (created by this plan)
 
@@ -159,7 +159,10 @@ export const rlnZkeyPath = fileURLToPath(new URL('../artifacts/rln/final.zkey', 
 
 /** Parsed RLN Groth16 verification key (for rlnjs RLNVerifier). */
 export const rlnVerificationKey: unknown = JSON.parse(
-  readFileSync(fileURLToPath(new URL('../artifacts/rln/verification_key.json', import.meta.url)), 'utf8'),
+  readFileSync(
+    fileURLToPath(new URL('../artifacts/rln/verification_key.json', import.meta.url)),
+    'utf8',
+  ),
 );
 ```
 
@@ -527,7 +530,7 @@ export function getIdentityCommitmentFromSecret(secret: bigint): bigint {
 ```
 
 - [ ] **Step 9: Run, confirm PASS. Typecheck the package:** `pnpm --filter @discreetly/crypto typecheck` may still fail on the barrel because `rln/index.js` does not exist yet — that is expected and resolved in Task 4. Run the two test files explicitly to confirm green:
-`pnpm --filter @discreetly/crypto exec vitest run src/signal-hash.test.ts src/shamir.test.ts`.
+      `pnpm --filter @discreetly/crypto exec vitest run src/signal-hash.test.ts src/shamir.test.ts`.
 
 - [ ] **Step 10: Commit**
 
@@ -715,22 +718,50 @@ describe('RLN prove → verify round-trip', () => {
 
     // valid
     await expect(
-      verifyRLNProof({ rlnIdentifier, proof, signalHash: x, epoch, currentEpoch: epoch, expectedRoot }),
+      verifyRLNProof({
+        rlnIdentifier,
+        proof,
+        signalHash: x,
+        epoch,
+        currentEpoch: epoch,
+        expectedRoot,
+      }),
     ).resolves.toBe(true);
 
     // wrong signal hash → reject
     await expect(
-      verifyRLNProof({ rlnIdentifier, proof, signalHash: x + 1n, epoch, currentEpoch: epoch, expectedRoot }),
+      verifyRLNProof({
+        rlnIdentifier,
+        proof,
+        signalHash: x + 1n,
+        epoch,
+        currentEpoch: epoch,
+        expectedRoot,
+      }),
     ).resolves.toBe(false);
 
     // stale epoch (outside ±1) → reject
     await expect(
-      verifyRLNProof({ rlnIdentifier, proof, signalHash: x, epoch, currentEpoch: epoch + 5n, expectedRoot }),
+      verifyRLNProof({
+        rlnIdentifier,
+        proof,
+        signalHash: x,
+        epoch,
+        currentEpoch: epoch + 5n,
+        expectedRoot,
+      }),
     ).resolves.toBe(false);
 
     // wrong expected root → reject
     await expect(
-      verifyRLNProof({ rlnIdentifier, proof, signalHash: x, epoch, currentEpoch: epoch, expectedRoot: expectedRoot + 1n }),
+      verifyRLNProof({
+        rlnIdentifier,
+        proof,
+        signalHash: x,
+        epoch,
+        currentEpoch: epoch,
+        expectedRoot: expectedRoot + 1n,
+      }),
     ).resolves.toBe(false);
   });
 });
@@ -787,4 +818,7 @@ git commit -m "Format crypto and circuits packages" || echo "nothing to format"
 - **Deferred to Plan 3:** IDC verifier/prover (`idc-nullifier` wrapper) — port when the reworked identity/password endpoints' need is settled; the package and artifacts remain available.
 - **Deferred to Plan 4:** browser artifact serving (URLs / `public/`), AES-GCM + PBKDF2 identity encryption (Web Crypto, browser-only), the full frontend prover ergonomics.
 - **Not ported:** `withdraw` circuit (unused legacy), `RLN2DHCircuit/` (untouched future feature).
+
+```
+
 ```

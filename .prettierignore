@@ -12,3 +12,6 @@ coverage
 
 # Prisma generated migration SQL
 packages/*/prisma/migrations
+
+# Vendored circuit artifacts (keep byte-identical to source)
+packages/circuits/artifacts
