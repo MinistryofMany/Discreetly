@@ -38,5 +38,7 @@ export function evaluate(policy: PolicyNode, badges: VerifiedBadge[], now: numbe
     const satisfied = policy.atLeast.of.filter((node) => evaluate(node, badges, now)).length;
     return satisfied >= policy.atLeast.n;
   }
-  return false;
+  // Exhaustiveness: a new PolicyNode variant will fail to compile here.
+  const _exhaustive: never = policy;
+  return _exhaustive;
 }

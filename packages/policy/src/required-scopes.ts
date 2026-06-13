@@ -21,6 +21,10 @@ export function requiredScopes(policy: PolicyNode): string[] {
       node.atLeast.of.forEach(walk);
       return;
     }
+    // Exhaustiveness: a new PolicyNode variant will fail to compile here,
+    // preventing a silently-incomplete scope list.
+    const _exhaustive: never = node;
+    void _exhaustive;
   };
 
   walk(policy);
