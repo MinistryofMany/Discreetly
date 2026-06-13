@@ -9,5 +9,8 @@ export const rlnZkeyPath = fileURLToPath(new URL('../artifacts/rln/final.zkey', 
 
 /** Parsed RLN Groth16 verification key (for rlnjs RLNVerifier). */
 export const rlnVerificationKey: unknown = JSON.parse(
-  readFileSync(fileURLToPath(new URL('../artifacts/rln/verification_key.json', import.meta.url)), 'utf8'),
+  readFileSync(
+    fileURLToPath(new URL('../artifacts/rln/verification_key.json', import.meta.url)),
+    'utf8',
+  ),
 );

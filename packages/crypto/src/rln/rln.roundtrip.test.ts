@@ -34,19 +34,47 @@ describe('RLN prove → verify round-trip', () => {
     expect(BigInt(proof.snarkProof.publicSignals.root)).toBe(expectedRoot);
 
     await expect(
-      verifyRLNProof({ rlnIdentifier, proof, signalHash: x, epoch, currentEpoch: epoch, expectedRoot }),
+      verifyRLNProof({
+        rlnIdentifier,
+        proof,
+        signalHash: x,
+        epoch,
+        currentEpoch: epoch,
+        expectedRoot,
+      }),
     ).resolves.toBe(true);
 
     await expect(
-      verifyRLNProof({ rlnIdentifier, proof, signalHash: x + 1n, epoch, currentEpoch: epoch, expectedRoot }),
+      verifyRLNProof({
+        rlnIdentifier,
+        proof,
+        signalHash: x + 1n,
+        epoch,
+        currentEpoch: epoch,
+        expectedRoot,
+      }),
     ).resolves.toBe(false);
 
     await expect(
-      verifyRLNProof({ rlnIdentifier, proof, signalHash: x, epoch, currentEpoch: epoch + 5n, expectedRoot }),
+      verifyRLNProof({
+        rlnIdentifier,
+        proof,
+        signalHash: x,
+        epoch,
+        currentEpoch: epoch + 5n,
+        expectedRoot,
+      }),
     ).resolves.toBe(false);
 
     await expect(
-      verifyRLNProof({ rlnIdentifier, proof, signalHash: x, epoch, currentEpoch: epoch, expectedRoot: expectedRoot + 1n }),
+      verifyRLNProof({
+        rlnIdentifier,
+        proof,
+        signalHash: x,
+        epoch,
+        currentEpoch: epoch,
+        expectedRoot: expectedRoot + 1n,
+      }),
     ).resolves.toBe(false);
   });
 });
