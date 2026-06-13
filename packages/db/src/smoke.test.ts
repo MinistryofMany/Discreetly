@@ -52,7 +52,7 @@ describe('db smoke', () => {
       prisma.membershipLeaf.create({
         data: { roomId, membershipId: (await firstMembership(roomId)).id, identityCommitment: 'IC3', rateCommitment: 'RC1' },
       }),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ code: 'P2002' });
   });
 });
 
