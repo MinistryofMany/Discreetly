@@ -10,6 +10,7 @@
   },
   "scripts": {
     "generate": "prisma generate",
+    "postinstall": "prisma generate",
     "migrate": "dotenv -e ../../.env -- prisma migrate dev",
     "validate": "dotenv -e ../../.env -- prisma validate",
     "studio": "dotenv -e ../../.env -- prisma studio",
