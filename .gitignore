@@ -45,3 +45,6 @@ prisma/*.db-journal
 # Local secrets / keys
 *.local
 dev-keys/
+
+# Worktrees
+.worktrees/
