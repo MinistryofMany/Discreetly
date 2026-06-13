@@ -1,0 +1,133 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoomVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum RoomPersistence {
+  PERSISTENT
+  EPHEMERAL
+}
+
+enum RoomEncryption {
+  PLAINTEXT
+  AES
+}
+
+enum MembershipStatus {
+  ACTIVE
+  BANNED
+}
+
+enum BanReason {
+  RATE_LIMIT_COLLISION
+  ADMIN
+}
+
+model Room {
+  id               String           @id @default(cuid())
+  name             String
+  slug             String           @unique
+  description      String?
+  rlnIdentifier    String           @unique
+  rateLimit        Int
+  userMessageLimit Int
+  maxDevices       Int              @default(5)
+  visibility       RoomVisibility   @default(PUBLIC)
+  persistence      RoomPersistence  @default(PERSISTENT)
+  encryption       RoomEncryption   @default(PLAINTEXT)
+  passwordHash     String?
+  accessPolicy     Json
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  memberships Membership[]
+  leaves      MembershipLeaf[]
+  messages    Message[]
+  bans        Ban[]
+}
+
+model Membership {
+  id            String           @id @default(cuid())
+  roomId        String
+  room          Room             @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  joinNullifier String
+  status        MembershipStatus @default(ACTIVE)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  leaves MembershipLeaf[]
+
+  @@unique([roomId, joinNullifier])
+  @@index([roomId, status])
+}
+
+model MembershipLeaf {
+  id                 String     @id @default(cuid())
+  membershipId       String
+  membership         Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  roomId             String
+  room               Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  identityCommitment String
+  rateCommitment     String
+  deviceLabel        String?
+  createdAt          DateTime   @default(now())
+  revokedAt          DateTime?
+
+  @@unique([roomId, rateCommitment])
+  @@index([membershipId])
+}
+
+model Ban {
+  id             String    @id @default(cuid())
+  roomId         String
+  room           Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  joinNullifier  String?
+  rateCommitment String?
+  reason         BanReason
+  shamirSecret   String?
+  createdAt      DateTime  @default(now())
+
+  @@index([roomId, joinNullifier])
+}
+
+model Message {
+  id           String   @id @default(cuid())
+  roomId       String
+  room         Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  epoch        BigInt
+  rlnNullifier String
+  content      String
+  proof        Json
+  sessionColor String?
+  createdAt    DateTime @default(now())
+
+  @@unique([roomId, epoch, rlnNullifier])
+  @@index([roomId, epoch])
+}
+
+model AdminUser {
+  id          String   @id @default(cuid())
+  pairwiseSub String   @unique
+  label       String?
+  createdAt   DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actor     String
+  action    String
+  target    String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
