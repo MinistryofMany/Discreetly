@@ -9,7 +9,7 @@
   "scripts": {
     "generate": "prisma generate",
     "migrate": "dotenv -e ../../.env -- prisma migrate dev",
-    "validate": "prisma validate",
+    "validate": "dotenv -e ../../.env -- prisma validate",
     "studio": "dotenv -e ../../.env -- prisma studio",
     "typecheck": "tsc --noEmit",
     "lint": "echo \"(no lint configured)\"",
