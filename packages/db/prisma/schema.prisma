@@ -33,21 +33,21 @@ enum BanReason {
 }
 
 model Room {
-  id               String           @id @default(cuid())
+  id               String          @id @default(cuid())
   name             String
-  slug             String           @unique
+  slug             String          @unique
   description      String?
-  rlnIdentifier    String           @unique
+  rlnIdentifier    String          @unique
   rateLimit        Int
   userMessageLimit Int
-  maxDevices       Int              @default(5)
-  visibility       RoomVisibility   @default(PUBLIC)
-  persistence      RoomPersistence  @default(PERSISTENT)
-  encryption       RoomEncryption   @default(PLAINTEXT)
+  maxDevices       Int             @default(5)
+  visibility       RoomVisibility  @default(PUBLIC)
+  persistence      RoomPersistence @default(PERSISTENT)
+  encryption       RoomEncryption  @default(PLAINTEXT)
   passwordHash     String?
   accessPolicy     Json
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   memberships Membership[]
   leaves      MembershipLeaf[]

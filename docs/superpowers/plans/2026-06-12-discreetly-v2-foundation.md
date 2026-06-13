@@ -55,6 +55,7 @@ discreetly/
 ## Task 1: Root workspace scaffold
 
 **Files:**
+
 - Create: `package.json`, `pnpm-workspace.yaml`, `turbo.json`, `tsconfig.base.json`, `.nvmrc`, `.npmrc`, `.prettierrc.json`
 
 - [ ] **Step 1: Create the workspace manifest**
@@ -63,9 +64,9 @@ Create `pnpm-workspace.yaml`:
 
 ```yaml
 packages:
-  - "apps/*"
-  - "services/*"
-  - "packages/*"
+  - 'apps/*'
+  - 'services/*'
+  - 'packages/*'
 ```
 
 - [ ] **Step 2: Create the root `package.json`**
@@ -189,6 +190,7 @@ git commit -m "Scaffold pnpm + turborepo workspace"
 ## Task 2: Dev infrastructure (Postgres + Redis)
 
 **Files:**
+
 - Create: `docker-compose.yml`, `.env.example`
 
 - [ ] **Step 1: Create the compose file**
@@ -204,11 +206,11 @@ services:
       POSTGRES_PASSWORD: discreetly
       POSTGRES_DB: discreetly
     ports:
-      - "5432:5432"
+      - '5432:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U discreetly"]
+      test: ['CMD-SHELL', 'pg_isready -U discreetly']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -216,9 +218,9 @@ services:
   redis:
     image: redis:7
     ports:
-      - "6379:6379"
+      - '6379:6379'
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -261,6 +263,7 @@ git commit -m "Add Postgres + Redis dev compose stack"
 ## Task 3: `@discreetly/shared` — types and enums
 
 **Files:**
+
 - Create: `packages/shared/package.json`, `packages/shared/tsconfig.json`, `packages/shared/src/enums.ts`, `packages/shared/src/index.ts`
 
 - [ ] **Step 1: Create the package manifest**
@@ -362,6 +365,7 @@ git commit -m "Add @discreetly/shared types and enums"
 ## Task 4: `@discreetly/policy` — types and guards
 
 **Files:**
+
 - Create: `packages/policy/package.json`, `packages/policy/tsconfig.json`, `packages/policy/vitest.config.ts`, `packages/policy/src/types.ts`, `packages/policy/src/index.ts`
 
 - [ ] **Step 1: Create the package manifest**
@@ -494,6 +498,7 @@ git commit -m "Add @discreetly/policy types and guards"
 ## Task 5: `requiredScopes()` (TDD)
 
 **Files:**
+
 - Create: `packages/policy/src/required-scopes.test.ts`
 - Create: `packages/policy/src/required-scopes.ts`
 
@@ -597,6 +602,7 @@ git commit -m "Add requiredScopes policy walker"
 ## Task 6: `evaluate()` (TDD)
 
 **Files:**
+
 - Create: `packages/policy/src/evaluate.test.ts`
 - Create: `packages/policy/src/evaluate.ts`
 
@@ -612,7 +618,11 @@ import type { PolicyNode, VerifiedBadge } from './types.js';
 const NOW = 1_750_000_000; // fixed unix seconds for deterministic expiry tests
 const DAY = 86_400;
 
-function badge(type: string, attributes: VerifiedBadge['attributes'] = {}, ageDays = 0): VerifiedBadge {
+function badge(
+  type: string,
+  attributes: VerifiedBadge['attributes'] = {},
+  ageDays = 0,
+): VerifiedBadge {
   return { type, attributes, issuedAt: NOW - ageDays * DAY };
 }
 
@@ -637,9 +647,21 @@ describe('evaluate', () => {
 
   it('allOf requires every child', () => {
     const policy: PolicyNode = {
-      allOf: [{ badge: { type: 'residency-country', where: { country: 'PT' } } }, { badge: { type: 'email-domain', where: { domain: 'acme.com' } } }],
+      allOf: [
+        { badge: { type: 'residency-country', where: { country: 'PT' } } },
+        { badge: { type: 'email-domain', where: { domain: 'acme.com' } } },
+      ],
     };
-    expect(evaluate(policy, [badge('residency-country', { country: 'PT' }), badge('email-domain', { domain: 'acme.com' })], NOW)).toBe(true);
+    expect(
+      evaluate(
+        policy,
+        [
+          badge('residency-country', { country: 'PT' }),
+          badge('email-domain', { domain: 'acme.com' }),
+        ],
+        NOW,
+      ),
+    ).toBe(true);
     expect(evaluate(policy, [badge('residency-country', { country: 'PT' })], NOW)).toBe(false);
   });
 
@@ -651,7 +673,10 @@ describe('evaluate', () => {
 
   it('atLeast requires n satisfied children', () => {
     const policy: PolicyNode = {
-      atLeast: { n: 2, of: [{ badge: { type: 'a' } }, { badge: { type: 'b' } }, { badge: { type: 'c' } }] },
+      atLeast: {
+        n: 2,
+        of: [{ badge: { type: 'a' } }, { badge: { type: 'b' } }, { badge: { type: 'c' } }],
+      },
     };
     expect(evaluate(policy, [badge('a'), badge('b')], NOW)).toBe(true);
     expect(evaluate(policy, [badge('a')], NOW)).toBe(false);
@@ -680,7 +705,10 @@ describe('evaluate', () => {
     ];
     expect(evaluate(policy, ok, NOW)).toBe(true);
 
-    const missingTopic = [badge('oauth-account', { provider: 'github' }), badge('oauth-account', { provider: 'steam' })];
+    const missingTopic = [
+      badge('oauth-account', { provider: 'github' }),
+      badge('oauth-account', { provider: 'steam' }),
+    ];
     expect(evaluate(policy, missingTopic, NOW)).toBe(false);
   });
 });
@@ -762,6 +790,7 @@ git commit -m "Add policy evaluate engine with full boolean + expiry support"
 ## Task 7: `@discreetly/db` — Prisma schema and client
 
 **Files:**
+
 - Create: `packages/db/package.json`, `packages/db/tsconfig.json`, `packages/db/prisma/schema.prisma`, `packages/db/src/index.ts`, `packages/db/src/smoke.test.ts`
 
 - [ ] **Step 1: Create the package manifest**
@@ -849,21 +878,21 @@ enum BanReason {
 }
 
 model Room {
-  id               String           @id @default(cuid())
+  id               String          @id @default(cuid())
   name             String
-  slug             String           @unique
+  slug             String          @unique
   description      String?
-  rlnIdentifier    String           @unique
+  rlnIdentifier    String          @unique
   rateLimit        Int // milliseconds per epoch
   userMessageLimit Int
-  maxDevices       Int              @default(5)
-  visibility       RoomVisibility   @default(PUBLIC)
-  persistence      RoomPersistence  @default(PERSISTENT)
-  encryption       RoomEncryption   @default(PLAINTEXT)
+  maxDevices       Int             @default(5)
+  visibility       RoomVisibility  @default(PUBLIC)
+  persistence      RoomPersistence @default(PERSISTENT)
+  encryption       RoomEncryption  @default(PLAINTEXT)
   passwordHash     String?
   accessPolicy     Json
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   memberships Membership[]
   leaves      MembershipLeaf[]
@@ -1036,7 +1065,12 @@ describe('db smoke', () => {
   it('rejects a duplicate rateCommitment in the same room', async () => {
     await expect(
       prisma.membershipLeaf.create({
-        data: { roomId, membershipId: (await firstMembership(roomId)).id, identityCommitment: 'IC3', rateCommitment: 'RC1' },
+        data: {
+          roomId,
+          membershipId: (await firstMembership(roomId)).id,
+          identityCommitment: 'IC3',
+          rateCommitment: 'RC1',
+        },
       }),
     ).rejects.toThrow();
   });

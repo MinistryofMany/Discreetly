@@ -5,7 +5,11 @@ import type { PolicyNode, VerifiedBadge } from './types.js';
 const NOW = 1_750_000_000; // fixed unix seconds for deterministic expiry tests
 const DAY = 86_400;
 
-function badge(type: string, attributes: VerifiedBadge['attributes'] = {}, ageDays = 0): VerifiedBadge {
+function badge(
+  type: string,
+  attributes: VerifiedBadge['attributes'] = {},
+  ageDays = 0,
+): VerifiedBadge {
   return { type, attributes, issuedAt: NOW - ageDays * DAY };
 }
 
@@ -30,9 +34,21 @@ describe('evaluate', () => {
 
   it('allOf requires every child', () => {
     const policy: PolicyNode = {
-      allOf: [{ badge: { type: 'residency-country', where: { country: 'PT' } } }, { badge: { type: 'email-domain', where: { domain: 'acme.com' } } }],
+      allOf: [
+        { badge: { type: 'residency-country', where: { country: 'PT' } } },
+        { badge: { type: 'email-domain', where: { domain: 'acme.com' } } },
+      ],
     };
-    expect(evaluate(policy, [badge('residency-country', { country: 'PT' }), badge('email-domain', { domain: 'acme.com' })], NOW)).toBe(true);
+    expect(
+      evaluate(
+        policy,
+        [
+          badge('residency-country', { country: 'PT' }),
+          badge('email-domain', { domain: 'acme.com' }),
+        ],
+        NOW,
+      ),
+    ).toBe(true);
     expect(evaluate(policy, [badge('residency-country', { country: 'PT' })], NOW)).toBe(false);
   });
 
@@ -44,7 +60,10 @@ describe('evaluate', () => {
 
   it('atLeast requires n satisfied children', () => {
     const policy: PolicyNode = {
-      atLeast: { n: 2, of: [{ badge: { type: 'a' } }, { badge: { type: 'b' } }, { badge: { type: 'c' } }] },
+      atLeast: {
+        n: 2,
+        of: [{ badge: { type: 'a' } }, { badge: { type: 'b' } }, { badge: { type: 'c' } }],
+      },
     };
     expect(evaluate(policy, [badge('a'), badge('b')], NOW)).toBe(true);
     expect(evaluate(policy, [badge('a')], NOW)).toBe(false);
@@ -73,7 +92,10 @@ describe('evaluate', () => {
     ];
     expect(evaluate(policy, ok, NOW)).toBe(true);
 
-    const missingTopic = [badge('oauth-account', { provider: 'github' }), badge('oauth-account', { provider: 'steam' })];
+    const missingTopic = [
+      badge('oauth-account', { provider: 'github' }),
+      badge('oauth-account', { provider: 'steam' }),
+    ];
     expect(evaluate(policy, missingTopic, NOW)).toBe(false);
   });
 
@@ -97,7 +119,11 @@ describe('evaluate', () => {
     expect(evaluate({ anyOf: [] }, [], NOW)).toBe(false);
     expect(evaluate({ atLeast: { n: 0, of: [] } }, [], NOW)).toBe(true);
     expect(
-      evaluate({ atLeast: { n: 5, of: [{ badge: { type: 'a' } }, { badge: { type: 'b' } }] } }, [badge('a'), badge('b')], NOW),
+      evaluate(
+        { atLeast: { n: 5, of: [{ badge: { type: 'a' } }, { badge: { type: 'b' } }] } },
+        [badge('a'), badge('b')],
+        NOW,
+      ),
     ).toBe(false);
   });
 });
