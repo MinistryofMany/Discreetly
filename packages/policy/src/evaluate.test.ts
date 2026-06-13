@@ -76,4 +76,28 @@ describe('evaluate', () => {
     const missingTopic = [badge('oauth-account', { provider: 'github' }), badge('oauth-account', { provider: 'steam' })];
     expect(evaluate(policy, missingTopic, NOW)).toBe(false);
   });
+
+  it('treats a badge issued exactly maxAgeDays ago as still valid (inclusive boundary)', () => {
+    const policy: PolicyNode = { badge: { type: 'age-check', maxAgeDays: 30 } };
+    expect(evaluate(policy, [badge('age-check', {}, 30)], NOW)).toBe(true);
+  });
+
+  it('rejects when a required attribute is absent from the badge', () => {
+    const policy: PolicyNode = { badge: { type: 'email-domain', where: { domain: 'acme.com' } } };
+    expect(evaluate(policy, [badge('email-domain', {})], NOW)).toBe(false);
+  });
+
+  it('uses strict equality: a boolean constraint does not match a string attribute', () => {
+    const policy: PolicyNode = { badge: { type: 'steam-game', where: { completed: true } } };
+    expect(evaluate(policy, [badge('steam-game', { completed: 'true' })], NOW)).toBe(false);
+  });
+
+  it('documents degenerate-node behavior', () => {
+    expect(evaluate({ allOf: [] }, [], NOW)).toBe(true);
+    expect(evaluate({ anyOf: [] }, [], NOW)).toBe(false);
+    expect(evaluate({ atLeast: { n: 0, of: [] } }, [], NOW)).toBe(true);
+    expect(
+      evaluate({ atLeast: { n: 5, of: [{ badge: { type: 'a' } }, { badge: { type: 'b' } }] } }, [badge('a'), badge('b')], NOW),
+    ).toBe(false);
+  });
 });
