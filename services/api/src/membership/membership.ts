@@ -27,6 +27,10 @@ export async function joinRoom(args: JoinArgs): Promise<JoinResult> {
     });
     if (membership.status === MembershipStatus.BANNED) return { ok: false as const, reason: 'banned' as const };
 
+    // Serialize concurrent joins for the same membership so the device-limit
+    // count-then-create below is race-free.
+    await tx.$queryRaw`SELECT 1 FROM "Membership" WHERE id = ${membership.id} FOR UPDATE`;
+
     const existing = await tx.membershipLeaf.findUnique({
       where: { roomId_rateCommitment: { roomId: args.room.id, rateCommitment } },
     });

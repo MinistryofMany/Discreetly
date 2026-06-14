@@ -51,6 +51,20 @@ describe('membership', () => {
     expect(leaf).toBeTruthy();
   });
 
+  it('does not exceed maxDevices under concurrent joins', async () => {
+    const n = 'jn-race';
+    await joinRoom({ room, joinNullifier: n, identityCommitment: '1000' }); // 1 of 2 used
+    const [r1, r2] = await Promise.all([
+      joinRoom({ room, joinNullifier: n, identityCommitment: '1001' }),
+      joinRoom({ room, joinNullifier: n, identityCommitment: '1002' }),
+    ]);
+    expect([r1, r2].filter((r) => r.ok).length).toBe(1);
+    const active = await prisma.membershipLeaf.count({
+      where: { roomId: room.id, revokedAt: null, membership: { joinNullifier: n } },
+    });
+    expect(active).toBe(2);
+  });
+
   it('refuses to join when the membership is banned', async () => {
     const n = 'jn-3';
     await joinRoom({ room, joinNullifier: n, identityCommitment: '666' });
