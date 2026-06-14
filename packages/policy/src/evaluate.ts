@@ -38,7 +38,9 @@ export function evaluate(policy: PolicyNode, badges: VerifiedBadge[], now: numbe
     const satisfied = policy.atLeast.of.filter((node) => evaluate(node, badges, now)).length;
     return satisfied >= policy.atLeast.n;
   }
-  // Exhaustiveness: a new PolicyNode variant will fail to compile here.
+  // Exhaustiveness (compile-time) + fail-closed (runtime): a new PolicyNode variant
+  // fails to compile here; a malformed/unrecognized runtime shape throws so callers
+  // can never mistake a non-boolean for an admit.
   const _exhaustive: never = policy;
-  return _exhaustive;
+  throw new Error(`unknown policy node shape: ${JSON.stringify(_exhaustive)}`);
 }

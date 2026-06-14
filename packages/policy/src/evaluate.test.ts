@@ -114,6 +114,15 @@ describe('evaluate', () => {
     expect(evaluate(policy, [badge('steam-game', { completed: 'true' })], NOW)).toBe(false);
   });
 
+  it('throws (fails closed) on unrecognized policy shapes', () => {
+    // @ts-expect-error malformed shapes are not valid PolicyNode
+    expect(() => evaluate({}, [], NOW)).toThrow();
+    // @ts-expect-error
+    expect(() => evaluate({ foo: 1 }, [], NOW)).toThrow();
+    // @ts-expect-error
+    expect(() => evaluate([], [], NOW)).toThrow();
+  });
+
   it('documents degenerate-node behavior', () => {
     expect(evaluate({ allOf: [] }, [], NOW)).toBe(true);
     expect(evaluate({ anyOf: [] }, [], NOW)).toBe(false);
