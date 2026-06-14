@@ -47,4 +47,9 @@ describe('verifyMinisterIdToken (mock issuer)', () => {
     const idToken = await signIdToken({ sub: 's' });
     expect((await verify(idToken)).badges).toEqual([]);
   });
+
+  it('rejects an expired VC', async () => {
+    const idToken = await signIdToken({ sub: 's', badges: [{ type: 'email-domain', attributes: { domain: 'a.com' }, expired: true }] });
+    await expect(verify(idToken)).rejects.toThrow();
+  });
 });
