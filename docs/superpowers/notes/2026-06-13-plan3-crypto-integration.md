@@ -33,3 +33,5 @@ Central fix options (decide when the first consumer lands):
 - replicate BOTH the `paths` override AND the ffjavascript ambient in each consumer's tsconfig (last resort, duplicative).
 
 Also consider shrinking crypto's public type surface: it currently leaks `@semaphore-protocol`'s `Group` type via `buildGroup()` and `merkleProofForLeaf()` return types. Adding a `computeRoot(rlnIdentifier, leaves): bigint` helper (so the verify-side backend never touches the `Group` type) would cut a consumer's exposure from three modules to one (`ffjavascript`, via `shamirRecovery`).
+
+**Resolved in 3a:** `computeRoot` added to `packages/crypto/src/rln/merkle.ts` to avoid the Group-type leak on the verify side; the `ffjavascript` ambient now lives in `@discreetly/shared/src/types/external-shims.d.ts`; consumers add that path to their tsconfig `include` (and the `@semaphore-protocol` `paths` only if they import `buildGroup`/`merkleProofForLeaf`).

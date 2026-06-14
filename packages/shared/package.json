@@ -6,7 +6,8 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./types/external-shims.d.ts": "./src/types/external-shims.d.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
