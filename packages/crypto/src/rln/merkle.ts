@@ -15,6 +15,11 @@ export function buildGroup(rlnIdentifier: bigint, leaves: readonly (string | big
   return new Group(rlnIdentifier, MERKLE_TREE_DEPTH, sanitizeLeaves(leaves));
 }
 
+/** The Merkle root of the room's leaf set, as a bigint (no Group type leak). */
+export function computeRoot(rlnIdentifier: bigint, leaves: readonly (string | bigint)[]): bigint {
+  return BigInt(buildGroup(rlnIdentifier, leaves).root);
+}
+
 /** Build a Merkle proof for `leaf` within the room's leaf set. */
 export function merkleProofForLeaf(
   rlnIdentifier: bigint,
