@@ -97,6 +97,7 @@ model Ban {
   createdAt      DateTime  @default(now())
 
   @@index([roomId, joinNullifier])
+  @@index([roomId, rateCommitment])
 }
 
 model Message {
@@ -130,4 +131,6 @@ model AuditLog {
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+  @@index([actor])
+  @@index([action])
 }
