@@ -5,8 +5,8 @@
   "type": "module",
   "main": "./src/server.ts",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "start": "tsx src/server.ts",
+    "dev": "tsx --tsconfig tsconfig.server.json watch src/server.ts",
+    "start": "tsx --tsconfig tsconfig.server.json src/server.ts",
     "typecheck": "tsc --noEmit",
     "lint": "echo \"(no lint configured)\"",
     "test": "dotenv -e ../../.env -- vitest run"
