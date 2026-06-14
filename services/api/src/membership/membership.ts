@@ -63,7 +63,7 @@ export interface RotateArgs {
 
 export type RotateResult =
   | { ok: true; rateCommitment: string }
-  | { ok: false; reason: 'banned' | 'no-membership' | 'old-leaf-not-found' };
+  | { ok: false; reason: 'banned' | 'no-membership' | 'old-leaf-not-found' | 'new-leaf-exists' };
 
 /** Replace one device leaf's identity commitment (RLN-secret rotation). */
 export async function rotateDevice(args: RotateArgs): Promise<RotateResult> {
@@ -80,6 +80,11 @@ export async function rotateDevice(args: RotateArgs): Promise<RotateResult> {
       where: { roomId_rateCommitment: { roomId: args.room.id, rateCommitment: oldRc } },
     });
     if (!old || old.membershipId !== membership.id) return { ok: false as const, reason: 'old-leaf-not-found' as const };
+
+    const collision = await tx.membershipLeaf.findUnique({
+      where: { roomId_rateCommitment: { roomId: args.room.id, rateCommitment: newRc } },
+    });
+    if (collision && collision.id !== old.id) return { ok: false as const, reason: 'new-leaf-exists' as const };
 
     await tx.membershipLeaf.update({
       where: { id: old.id },

@@ -65,6 +65,14 @@ describe('membership', () => {
     expect(active).toBe(2);
   });
 
+  it('refuses rotation to an identity commitment already used by another leaf', async () => {
+    const n = 'jn-rot-collide';
+    await joinRoom({ room, joinNullifier: n, identityCommitment: '2000' });
+    await joinRoom({ room, joinNullifier: n, identityCommitment: '2001' });
+    const r = await rotateDevice({ room, joinNullifier: n, oldIdentityCommitment: '2000', newIdentityCommitment: '2001' });
+    expect(r).toMatchObject({ ok: false, reason: 'new-leaf-exists' });
+  });
+
   it('refuses to join when the membership is banned', async () => {
     const n = 'jn-3';
     await joinRoom({ room, joinNullifier: n, identityCommitment: '666' });
