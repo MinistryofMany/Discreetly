@@ -26,6 +26,8 @@ export function makeVerifier(deps: VerifierDeps) {
     const { payload } = await jwtVerify(idToken, deps.jwks, {
       issuer: deps.issuer,
       audience: deps.audience,
+      requiredClaims: ['exp', 'iat'],
+      maxTokenAge: '10m',
     });
     const sub = payload.sub;
     if (!sub) throw new Error('id_token missing sub');
@@ -34,7 +36,7 @@ export function makeVerifier(deps: VerifierDeps) {
     const badges: VerifiedBadge[] = [];
     for (const vcJwt of raw) {
       if (typeof vcJwt !== 'string') throw new Error('non-string badge entry');
-      const { payload: vc } = await jwtVerify(vcJwt, deps.jwks);
+      const { payload: vc } = await jwtVerify(vcJwt, deps.jwks, { requiredClaims: ['exp', 'iat'] });
       if (vc.iss !== deps.vcIssuer) throw new Error(`unexpected VC issuer: ${String(vc.iss)}`);
       const body = vc.vc as VcBody | undefined;
       if (!body?.type || !body.credentialSubject) throw new Error('malformed VC');

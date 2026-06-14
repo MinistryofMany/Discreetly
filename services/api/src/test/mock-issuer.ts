@@ -16,6 +16,7 @@ export interface MockBadge {
   type: string;
   attributes: Record<string, string | number | boolean>;
   ageDays?: number;
+  expired?: boolean;
 }
 
 function badgeTypeToCredType(type: string): string {
@@ -27,8 +28,9 @@ function badgeTypeToCredType(type: string): string {
 }
 
 async function signVc(userId: string, badge: MockBadge): Promise<string> {
-  const iatSec = Math.floor(Date.now() / 1000) - (badge.ageDays ?? 0) * 86_400;
-  return new SignJWT({
+  const nowSec = Math.floor(Date.now() / 1000);
+  const iatSec = badge.expired ? nowSec - 120 : nowSec - (badge.ageDays ?? 0) * 86_400;
+  const builder = new SignJWT({
     vc: {
       '@context': ['https://www.w3.org/ns/credentials/v2'],
       type: ['VerifiableCredential', badgeTypeToCredType(badge.type)],
@@ -39,8 +41,8 @@ async function signVc(userId: string, badge: MockBadge): Promise<string> {
     .setIssuer(MOCK_VC_ISSUER)
     .setSubject(`${MOCK_VC_ISSUER}:users:${userId}`)
     .setIssuedAt(iatSec)
-    .setExpirationTime('365d')
-    .sign(privateKey);
+    .setExpirationTime(badge.expired ? nowSec - 60 : '365d');
+  return builder.sign(privateKey);
 }
 
 export async function signIdToken(opts: {
