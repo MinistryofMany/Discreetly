@@ -20,6 +20,12 @@ export interface GateResult {
 export async function evaluateGate(input: GateInput): Promise<GateResult> {
   const { sub, badges } = await input.verify(input.idToken);
   const now = input.now ?? Math.floor(Date.now() / 1000);
-  const allowed = evaluate(input.policy, badges, now);
+  let allowed = false;
+  try {
+    allowed = evaluate(input.policy, badges, now) === true;
+  } catch {
+    // malformed/unrecognized policy => fail closed (deny)
+    allowed = false;
+  }
   return { allowed, sub, joinNullifier: joinNullifier(sub, input.rlnIdentifier) };
 }

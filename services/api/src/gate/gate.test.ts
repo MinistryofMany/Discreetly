@@ -27,4 +27,9 @@ describe('evaluateGate', () => {
     const res = await evaluateGate({ idToken, rlnIdentifier: 700n, policy, verify, now: 1_750_000_000 });
     expect(res.allowed).toBe(false);
   });
+  it('denies (fail-closed) when the stored policy is malformed', async () => {
+    const idToken = await signIdToken({ sub: 'sub-malformed', badges: [{ type: 'email-domain', attributes: { domain: 'acme.com' } }] });
+    const res = await evaluateGate({ idToken, rlnIdentifier: 700n, policy: {} as unknown as PolicyNode, verify, now: 1_750_000_000 });
+    expect(res.allowed).toBe(false);
+  });
 });
