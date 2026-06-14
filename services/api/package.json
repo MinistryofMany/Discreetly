@@ -1,0 +1,30 @@
+{
+  "name": "@discreetly/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/server.ts",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo \"(no lint configured)\"",
+    "test": "dotenv -e ../../.env -- vitest run"
+  },
+  "dependencies": {
+    "@discreetly/crypto": "workspace:*",
+    "@discreetly/db": "workspace:*",
+    "@discreetly/policy": "workspace:*",
+    "@discreetly/shared": "workspace:*",
+    "@trpc/server": "^11.0.0",
+    "jose": "^5.9.6",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "dotenv-cli": "^7.4.4",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}
