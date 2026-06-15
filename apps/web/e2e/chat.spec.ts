@@ -84,6 +84,32 @@ test('join an open room, send an RLN message, see it over the live feed', async 
   await expect.poll(() => db.message.count({ where: { roomId: room.id } })).toBeGreaterThan(0);
 });
 
+test('per-epoch rate limit blocks a second send in the same window', async ({ page }) => {
+  const db = getPrisma();
+  // userMessageLimit 1 + a long epoch window => the 2nd send hits the cap.
+  const room = await createRoom({
+    name: 'Slowpoke',
+    slug: unique('slow'),
+    userMessageLimit: 1,
+    rateLimit: 3_600_000,
+  });
+
+  await enterAndJoin(page, room.id);
+
+  await page.getByPlaceholder(/type a message/i).fill('first');
+  await page.getByRole('button', { name: /send message/i }).click();
+  await expect(page.getByText('first')).toBeVisible({ timeout: 60_000 });
+  await expect.poll(() => db.message.count({ where: { roomId: room.id } })).toBe(1);
+
+  // Second send in the same epoch is refused client-side (no new proof/message).
+  await page.getByPlaceholder(/type a message/i).fill('second');
+  await page.getByRole('button', { name: /send message/i }).click();
+  await expect(page.getByText(/rate limit reached for this epoch/i)).toBeVisible();
+  // No second message was persisted.
+  await page.waitForTimeout(1_000);
+  expect(await db.message.count({ where: { roomId: room.id } })).toBe(1);
+});
+
 test('AES room: encrypted send round-trips to decrypted text', async ({ page }) => {
   const room = await createRoom({
     name: 'Secret',
