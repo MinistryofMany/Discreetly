@@ -1,6 +1,5 @@
-import { jwtVerify, createRemoteJWKSet, type JWTVerifyGetKey } from 'jose';
+import { jwtVerify, type JWTVerifyGetKey } from 'jose';
 import type { VerifiedBadge } from '@discreetly/policy';
-import { config } from '../config.js';
 import { credentialTypeToBadgeType } from './badge-type.js';
 
 export interface VerifiedIdentity {
@@ -52,11 +51,3 @@ export function makeVerifier(deps: VerifierDeps) {
     return { sub, badges };
   };
 }
-
-/** Production verifier bound to the configured live Minister JWKS. */
-export const verifyMinisterIdToken = makeVerifier({
-  issuer: config.MINISTER_ISSUER,
-  audience: config.MINISTER_CLIENT_ID,
-  vcIssuer: config.MINISTER_VC_ISSUER,
-  jwks: createRemoteJWKSet(new URL(config.MINISTER_JWKS_URL)),
-});
