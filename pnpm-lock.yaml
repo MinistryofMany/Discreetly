@@ -135,12 +135,21 @@ importers:
       happy-dom:
         specifier: ^15.11.7
         version: 15.11.7
+      jose:
+        specifier: ^5.9.6
+        version: 5.10.0
+      pg:
+        specifier: ^8.21.0
+        version: 8.21.0
       postcss:
         specifier: ^8.5.1
         version: 8.5.15
       tailwindcss:
         specifier: ^3.4.19
         version: 3.4.19(tsx@4.22.4)
+      tsx:
+        specifier: ^4.19.2
+        version: 4.22.4
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
