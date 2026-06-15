@@ -17,6 +17,14 @@ export interface MockBadge {
   attributes: Record<string, string | number | boolean>;
   ageDays?: number;
   expired?: boolean;
+  /**
+   * Override the VC `iss` (and the matching holder-DID prefix). Still signed
+   * by the mock key, so the signature verifies against the JWKS, but the SDK
+   * derives the expected DID from the OIDC issuer host and rejects any badge
+   * whose `iss` differs - it lands in `rejected`. Defaults to MOCK_VC_ISSUER,
+   * which equals didFromIssuer(MOCK_ISSUER).
+   */
+  vcIssuer?: string;
 }
 
 function badgeTypeToCredType(type: string): string {
@@ -30,16 +38,18 @@ function badgeTypeToCredType(type: string): string {
 async function signVc(userId: string, badge: MockBadge): Promise<string> {
   const nowSec = Math.floor(Date.now() / 1000);
   const iatSec = badge.expired ? nowSec - 120 : nowSec - (badge.ageDays ?? 0) * 86_400;
+  const vcIssuer = badge.vcIssuer ?? MOCK_VC_ISSUER;
+  const subjectId = `${vcIssuer}:users:${userId}`;
   const builder = new SignJWT({
     vc: {
       '@context': ['https://www.w3.org/ns/credentials/v2'],
       type: ['VerifiableCredential', badgeTypeToCredType(badge.type)],
-      credentialSubject: { id: `${MOCK_VC_ISSUER}:users:${userId}`, ...badge.attributes },
+      credentialSubject: { id: subjectId, ...badge.attributes },
     },
   })
     .setProtectedHeader({ alg: 'EdDSA', kid: KID, typ: 'vc+jwt' })
-    .setIssuer(MOCK_VC_ISSUER)
-    .setSubject(`${MOCK_VC_ISSUER}:users:${userId}`)
+    .setIssuer(vcIssuer)
+    .setSubject(subjectId)
     .setIssuedAt(iatSec)
     .setExpirationTime(badge.expired ? nowSec - 60 : '365d');
   return builder.sign(privateKey);

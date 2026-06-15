@@ -8,7 +8,6 @@ import {
   jwks,
   signIdToken,
   MOCK_ISSUER,
-  MOCK_VC_ISSUER,
   MOCK_CLIENT_ID,
 } from '../test/mock-issuer.js';
 import { OPEN_POLICY } from '@discreetly/policy';
@@ -17,7 +16,6 @@ import { hashRoomPassword, verifyRoomPassword } from './room-crypto.js';
 const mockVerifier = makeVerifier({
   issuer: MOCK_ISSUER,
   audience: MOCK_CLIENT_ID,
-  vcIssuer: MOCK_VC_ISSUER,
   jwks: createLocalJWKSet(await jwks()),
 });
 

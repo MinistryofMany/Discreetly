@@ -1,18 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { createLocalJWKSet } from 'jose';
 import { makeVerifier } from './verify.js';
-import {
-  jwks,
-  signIdToken,
-  MOCK_ISSUER,
-  MOCK_VC_ISSUER,
-  MOCK_CLIENT_ID,
-} from '../test/mock-issuer.js';
+import { jwks, signIdToken, MOCK_ISSUER, MOCK_CLIENT_ID } from '../test/mock-issuer.js';
 
 const verify = makeVerifier({
   issuer: MOCK_ISSUER,
   audience: MOCK_CLIENT_ID,
-  vcIssuer: MOCK_VC_ISSUER,
+  // Injecting the mock JWKS keeps verification offline. The SDK applies this
+  // same key to the id_token wrapper AND the badge VCs, and derives the
+  // expected VC issuer DID (did:web:mock.minister) from MOCK_ISSUER's host.
   jwks: createLocalJWKSet(await jwks()),
 });
 
@@ -27,7 +23,9 @@ describe('verifyMinisterIdToken (mock issuer)', () => {
     expect(result.badges).toEqual([
       expect.objectContaining({ type: 'email-domain', attributes: { domain: 'acme.com' } }),
     ]);
+    // issuedAt is recovered from the verified VC's raw payload `iat`.
     expect(typeof result.badges[0]!.issuedAt).toBe('number');
+    expect(result.badges[0]!.issuedAt).toBeGreaterThan(0);
   });
 
   it('rejects a wrong audience', async () => {
@@ -40,18 +38,20 @@ describe('verifyMinisterIdToken (mock issuer)', () => {
     await expect(verify(idToken)).rejects.toThrow();
   });
 
-  it('rejects a VC with an unexpected issuer (verifier expects a different vcIssuer)', async () => {
-    const v = makeVerifier({
-      issuer: MOCK_ISSUER,
-      audience: MOCK_CLIENT_ID,
-      vcIssuer: 'did:web:other',
-      jwks: createLocalJWKSet(await jwks()),
-    });
+  it('drops a badge whose VC issuer does not match the OIDC issuer host', async () => {
+    // The wrapper is valid, but the badge VC is stamped with a different
+    // `iss`. The SDK expects did:web:mock.minister (derived from MOCK_ISSUER),
+    // so the mismatched badge lands in `rejected` and is absent from results.
+    // Login still succeeds.
     const idToken = await signIdToken({
       sub: 's',
-      badges: [{ type: 'email-domain', attributes: { domain: 'a.com' } }],
+      badges: [
+        { type: 'email-domain', attributes: { domain: 'a.com' }, vcIssuer: 'did:web:other' },
+      ],
     });
-    await expect(v(idToken)).rejects.toThrow();
+    const result = await verify(idToken);
+    expect(result.sub).toBe('s');
+    expect(result.badges).toEqual([]);
   });
 
   it('returns an empty badge set when none are disclosed', async () => {
@@ -59,11 +59,15 @@ describe('verifyMinisterIdToken (mock issuer)', () => {
     expect((await verify(idToken)).badges).toEqual([]);
   });
 
-  it('rejects an expired VC', async () => {
+  it('drops an expired VC but still verifies the identity', async () => {
+    // The SDK never throws on a bad badge: the expired VC lands in `rejected`,
+    // so login succeeds with no usable badges (fails closed for gating).
     const idToken = await signIdToken({
       sub: 's',
       badges: [{ type: 'email-domain', attributes: { domain: 'a.com' }, expired: true }],
     });
-    await expect(verify(idToken)).rejects.toThrow();
+    const result = await verify(idToken);
+    expect(result.sub).toBe('s');
+    expect(result.badges).toEqual([]);
   });
 });

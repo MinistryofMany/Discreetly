@@ -6,7 +6,6 @@ import {
   jwks,
   signIdToken,
   MOCK_ISSUER,
-  MOCK_VC_ISSUER,
   MOCK_CLIENT_ID,
 } from '../test/mock-issuer.js';
 import type { PolicyNode } from '@discreetly/policy';
@@ -14,7 +13,6 @@ import type { PolicyNode } from '@discreetly/policy';
 const verify = makeVerifier({
   issuer: MOCK_ISSUER,
   audience: MOCK_CLIENT_ID,
-  vcIssuer: MOCK_VC_ISSUER,
   jwks: createLocalJWKSet(await jwks()),
 });
 const policy: PolicyNode = {
