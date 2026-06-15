@@ -12,7 +12,9 @@ export const roomRouter = router({
       const room = await prisma.room.findUnique({ where: { id: input.id }, select: PUBLIC_ROOM_FIELDS });
       if (!room) throw new TRPCError({ code: 'NOT_FOUND', message: 'room not found' });
       // PRIVATE rooms: same gate as leaves/subscribe (members only). PUBLIC: open.
-      await assertRoomReadable(room, input.idToken, ctx.verify);
+      // Prefer the Authorization header bearer; fall back to the input for callers
+      // (e.g. tests) that pass it explicitly.
+      await assertRoomReadable(room, ctx.adminIdToken ?? input.idToken, ctx.verify);
       return room;
     }),
   listPublic: publicProcedure.query(async () =>
@@ -30,7 +32,7 @@ export const roomRouter = router({
         select: { id: true, visibility: true, rlnIdentifier: true },
       });
       if (!room) throw new TRPCError({ code: 'NOT_FOUND', message: 'room not found' });
-      await assertRoomReadable(room, input.idToken, ctx.verify);
+      await assertRoomReadable(room, ctx.adminIdToken ?? input.idToken, ctx.verify);
       const leaves = await prisma.membershipLeaf.findMany({
         where: { roomId: input.id, revokedAt: null },
         select: { rateCommitment: true },

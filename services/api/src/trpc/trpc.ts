@@ -6,7 +6,11 @@ export type VerifyFn = (idToken: string) => Promise<VerifiedIdentity>;
 
 export interface Context {
   verify: VerifyFn;
-  /** Raw Bearer id_token from the Authorization header (admin requests only). */
+  /**
+   * Raw Bearer id_token from the Authorization header. Used by `adminProcedure`
+   * and as the preferred source of the caller's id_token for room read gating,
+   * so the token travels in the header (never in a query input / URL).
+   */
   adminIdToken?: string;
 }
 
