@@ -30,6 +30,10 @@ function bearer(headerValue?: string | string[]): string | undefined {
 
 const httpServer = createHTTPServer({
   router: appRouter,
+  // The web client sends queries as POST (methodOverride) so query inputs (and
+  // the id_token) never end up in the URL. The HTTP adapter must opt in to
+  // accept POST for query procedures.
+  allowMethodOverride: true,
   middleware: (req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', 'content-type, authorization');
