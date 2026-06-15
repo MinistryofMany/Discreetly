@@ -158,6 +158,28 @@ test('private room read is gated: non-member is blocked', async ({ page }) => {
   await expect(page.getByText(/you must be a member to view it/i)).toBeVisible();
 });
 
+test('id_token never appears in a request URL (room reads use POST + header)', async ({
+  page,
+}) => {
+  const room = await createRoom({ name: 'No-Leak', slug: unique('noleak') });
+
+  // Capture every request URL the page makes while authenticated and browsing.
+  const urls: string[] = [];
+  page.on('request', (req) => urls.push(req.url()));
+
+  await signIn(page, { email: USER_EMAIL, name: USER_EMAIL });
+  await page.goto(`/rooms/${room.id}`);
+  await expect(page.getByRole('heading', { name: 'No-Leak' })).toBeVisible({ timeout: 30_000 });
+  // Let the room.get / room.leaves / message.list queries fire.
+  await page.waitForTimeout(1_000);
+
+  // No JWT (eyJ...) and no `id_token`/`idToken` query param in ANY request URL.
+  const leaked = urls.filter(
+    (u) => /eyJ[A-Za-z0-9_-]+\./.test(u) || /id[_-]?token/i.test(u),
+  );
+  expect(leaked, `URLs leaking a token:\n${leaked.join('\n')}`).toEqual([]);
+});
+
 test('admin broadcast reaches a chat subscriber as a system message', async ({ browser }) => {
   const db = getPrisma();
   const room = await createRoom({ name: 'Townhall', slug: unique('townhall') });

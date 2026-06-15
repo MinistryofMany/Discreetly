@@ -8,7 +8,7 @@ import { useTRPC } from '@/lib/trpc';
 import { useIdentity } from '@/lib/identity-context';
 import { rateCommitmentFor } from '@/lib/rln';
 import type { PublicRoom } from '@/lib/room-types';
-import type { FeedItem, RoomBroadcast } from '@/lib/broadcast-types';
+import type { ChatBroadcast, FeedItem, RoomBroadcast } from '@/lib/broadcast-types';
 import { MessageFeed } from '@/components/message-feed';
 import { MessageComposer } from '@/components/message-composer';
 import { JoinPanel } from '@/components/join-panel';
@@ -25,27 +25,54 @@ export function RoomView({ roomId }: { roomId: string }) {
   const { identity } = useIdentity();
   const idToken = session?.idToken ?? undefined;
 
-  const roomQuery = useQuery(
-    trpc.room.get.queryOptions({ id: roomId, idToken }),
-  );
-  const leavesQuery = useQuery(
-    trpc.room.leaves.queryOptions({ id: roomId, idToken }),
-  );
+  // room.get / room.leaves read the caller's id_token from the Authorization
+  // header (set in makeTRPCClient), so it is never serialized into a query input
+  // or URL. The WS subscription has no header, so it still passes idToken inline.
+  const roomQuery = useQuery(trpc.room.get.queryOptions({ id: roomId }));
+  const leavesQuery = useQuery(trpc.room.leaves.queryOptions({ id: roomId }));
 
   const room = roomQuery.data as PublicRoom | undefined;
   const leavesData = leavesQuery.data as string[] | undefined;
   const leaves = React.useMemo(() => leavesData ?? [], [leavesData]);
 
+  // Persisted history backfill: seed the feed so a refresh or a late joiner sees
+  // existing messages. Enabled once the room is readable. EPHEMERAL rooms return [].
+  const historyQuery = useQuery({
+    ...trpc.message.list.queryOptions({ roomId }),
+    enabled: room !== undefined,
+  });
+
   const [aesKey, setAesKey] = React.useState<CryptoKey | null>(null);
   const [items, setItems] = React.useState<FeedItem[]>([]);
   const seqRef = React.useRef(0);
+  // Server message ids already in the feed, so backfill + live never double-render.
+  const seenIdsRef = React.useRef<Set<string>>(new Set());
 
   const appendBroadcast = React.useCallback((broadcast: RoomBroadcast) => {
-    setItems((prev) => [
-      ...prev,
-      { key: `${Date.now()}-${seqRef.current++}`, broadcast },
-    ]);
+    if (broadcast.kind === 'message') {
+      if (seenIdsRef.current.has(broadcast.id)) return;
+      seenIdsRef.current.add(broadcast.id);
+    }
+    const key =
+      broadcast.kind === 'message'
+        ? `m:${broadcast.id}`
+        : `s:${Date.now()}-${seqRef.current++}`;
+    setItems((prev) => [...prev, { key, broadcast }]);
   }, []);
+
+  // Seed history (oldest-first) once it loads, before/independent of live data.
+  // message.list returns newest-first, so reverse for chronological order.
+  React.useEffect(() => {
+    const history = historyQuery.data as ChatBroadcast[] | undefined;
+    if (!history) return;
+    const fresh = [...history].reverse().filter((m) => !seenIdsRef.current.has(m.id));
+    if (fresh.length === 0) return;
+    for (const m of fresh) seenIdsRef.current.add(m.id);
+    setItems((prev) => [
+      ...fresh.map((broadcast) => ({ key: `m:${broadcast.id}`, broadcast })),
+      ...prev,
+    ]);
+  }, [historyQuery.data]);
 
   // Live subscription. Enabled only once the room is readable (loaded ok).
   const sub = useSubscription(
@@ -84,7 +111,9 @@ export function RoomView({ roomId }: { roomId: string }) {
 
   if (roomQuery.isError) {
     const msg = roomQuery.error.message;
-    const isAccess = /forbidden|member|access|denied/i.test(msg);
+    // Branch on the typed tRPC error code rather than matching the message text.
+    const code = (roomQuery.error as { data?: { code?: string } }).data?.code;
+    const isAccess = code === 'FORBIDDEN' || code === 'UNAUTHORIZED';
     return (
       <div className="rounded-lg border bg-card p-6">
         <h2 className="mb-2 text-lg font-semibold">
