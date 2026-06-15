@@ -232,6 +232,23 @@ never clashes with a running dev stack. Global teardown stops all three servers.
 
 ## Known gaps and resolved decisions
 
+**Router output types and TS2589:** `inferRouterOutputs<AppRouter>` trips
+TS2589 ("type instantiation is excessively deep") when indexing into the
+recursive Prisma `Json` columns (`accessPolicy`, audit `metadata`). Resolution:
+`services/api/src/trpc/outputs.ts` defines explicit named types (`PublicRoom`,
+`AdminRoom`, etc.) by `Omit`-ing the deep columns from the inferred type and
+re-declaring them with the precise application type (`PolicyNode`) or `unknown`.
+These are re-exported from `services/api/src/server.ts` as `@discreetly/api`
+public surface. Web `*-types.ts` files import from `@discreetly/api` rather than
+re-declaring shapes, so a resolver change breaks the type instead of drifting
+silently.
+
+`message.subscribe` yields `RoomBroadcast` (a discriminated union); tRPC's
+`inferRouterOutputs` does not cover subscription yield types. `ChatBroadcast`,
+`SystemBroadcast`, and `RoomBroadcast` are re-exported from `server.ts` and
+imported by `apps/web/src/lib/broadcast-types.ts` - same "break not drift"
+guarantee.
+
 **Ephemeral rooms:** `RoomPersistence.EPHEMERAL` exists in the enum and
 `message.list` returns `[]` for ephemeral rooms. However,
 `services/api/src/messaging/pipeline.ts` (`sendMessage`) always calls
@@ -266,7 +283,9 @@ Implementation plans (in `docs/superpowers/plans/`):
 | `2026-06-14-discreetly-v2-backend-messaging.md`   | Plan 3d - message pipeline, Redis pub/sub |
 | `2026-06-14-discreetly-v2-frontend.md`            | Plan 4 - frontend, admin UI, e2e |
 
-Plans 5 (CI/deploy) and 6 (hardening) are upcoming and not yet committed.
+| `2026-06-15-discreetly-v2-ci-deploy.md`           | Plan 5 - CI/deploy, Dockerfiles, prod compose |
+
+Plan 6 (hardening) is upcoming and not yet committed.
 
 ---
 
