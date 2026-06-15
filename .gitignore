@@ -48,3 +48,6 @@ dev-keys/
 
 # Worktrees
 .worktrees/
+
+# Archived pre-monorepo reference trees (kept on disk, not tracked). Safe to delete.
+_legacy/
