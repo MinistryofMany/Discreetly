@@ -409,7 +409,9 @@ function PolicyNodeEditor(props: NodeProps) {
   const { node } = props;
   if (node.kind === 'badge') return <BadgeNodeEditor {...props} node={node} />;
   if (node.kind === 'allOf' || node.kind === 'anyOf') return <CompositeNodeEditor {...props} node={node} />;
-  // node.kind === 'atLeast'
+  // node.kind === 'atLeast'. TS cannot narrow the union to AtLeastBuilderNode
+  // here because CompositeBuilderNode carries a union `kind` ('allOf' | 'anyOf')
+  // on a single interface, so the cast is required.
   return <AtLeastNodeEditor {...props} node={node as AtLeastBuilderNode} />;
 }
 

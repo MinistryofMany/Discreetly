@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
-import { useSubscription } from '@trpc/tanstack-react-query';
+import { useSubscription, type TRPCSubscriptionStatus } from '@trpc/tanstack-react-query';
 import { useTRPC } from '@/lib/trpc';
 import { useIdentity } from '@/lib/identity-context';
 import { rateCommitmentFor } from '@/lib/rln';
@@ -211,14 +211,17 @@ export function RoomView({ roomId }: { roomId: string }) {
   );
 }
 
-function ConnectionDot({ status }: { status: string }) {
-  const map: Record<string, { color: string; label: string }> = {
+function ConnectionDot({ status }: { status: TRPCSubscriptionStatus }) {
+  // Exhaustive over the tRPC subscription status union. 'pending' is the
+  // connected/live state in @trpc/tanstack-react-query (verified against its
+  // TRPCSubscriptionPendingResult type), so it maps to the green "live" dot.
+  const map: Record<TRPCSubscriptionStatus, { color: string; label: string }> = {
     idle: { color: 'bg-muted-foreground', label: 'idle' },
     connecting: { color: 'bg-amber-500', label: 'connecting' },
     pending: { color: 'bg-emerald-500', label: 'live' },
     error: { color: 'bg-destructive', label: 'disconnected' },
   };
-  const s = map[status] ?? map.idle!;
+  const s = map[status];
   return (
     <span className="ml-auto flex items-center gap-1.5 text-[11px] text-muted-foreground">
       <span className={`h-2 w-2 rounded-full ${s.color}`} />

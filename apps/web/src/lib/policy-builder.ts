@@ -8,7 +8,7 @@
  */
 
 import type { PolicyNode } from '@discreetly/policy';
-import { policyNodeSchema, OPEN_POLICY } from '@discreetly/policy';
+import { policyNodeSchema } from '@discreetly/policy';
 
 // ---- UI node types ---------------------------------------------------------
 
@@ -204,9 +204,4 @@ export function deserializeNode(node: PolicyNode): PolicyBuilderNode {
     n: String(node.atLeast.n),
     children: node.atLeast.of.map(deserializeNode),
   };
-}
-
-/** Convert OPEN_POLICY to a builder node */
-export function openPolicyNode(): CompositeBuilderNode {
-  return deserializeNode(OPEN_POLICY) as CompositeBuilderNode;
 }
