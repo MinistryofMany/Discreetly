@@ -25,5 +25,5 @@
     ".next/types/**/*.ts",
     "../../packages/shared/src/types/external-shims.d.ts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "e2e"]
 }

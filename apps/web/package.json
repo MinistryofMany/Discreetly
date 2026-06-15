@@ -9,7 +9,7 @@
     "prebuild": "node scripts/copy-circuits.mjs",
     "build": "next build",
     "start": "next start --port 3001",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p e2e/tsconfig.json",
     "lint": "next lint",
     "test": "vitest run",
     "test:e2e": "playwright test"
@@ -44,9 +44,12 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@discreetly/db": "workspace:*",
     "@playwright/test": "^1.49.1",
+    "@prisma/client": "^6.19.3",
     "@semaphore-protocol/identity": "3.15.0",
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.4.20",
