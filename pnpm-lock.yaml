@@ -41,6 +41,9 @@ importers:
       '@discreetly/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@minister/client':
+        specifier: git+https://github.com/MinistryofMany/minister-client.git#6171588
+        version: https://codeload.github.com/MinistryofMany/minister-client/tar.gz/6171588
       '@radix-ui/react-avatar':
         specifier: ^1.1.12
         version: 1.1.12(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -273,6 +276,9 @@ importers:
       '@discreetly/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@minister/client':
+        specifier: git+https://github.com/MinistryofMany/minister-client.git#6171588
+        version: https://codeload.github.com/MinistryofMany/minister-client/tar.gz/6171588
       '@trpc/server':
         specifier: ^11.0.0
         version: 11.17.0(typescript@5.9.3)
@@ -925,6 +931,15 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@minister/client@https://codeload.github.com/MinistryofMany/minister-client/tar.gz/6171588':
+    resolution: {tarball: https://codeload.github.com/MinistryofMany/minister-client/tar.gz/6171588}
+    version: 0.2.0
+    peerDependencies:
+      '@auth/core': ^0.37.0
+    peerDependenciesMeta:
+      '@auth/core':
+        optional: true
 
   '@napi-rs/wasm-runtime@1.1.5':
     resolution: {integrity: sha512-AWPoBRJ9tsnVhor4sjO7rkni+7p+2IAEFj6cx06UgP10jkQHqay/36uRV/bFkgrh18D9vb4cr8Q0Pthskgzy+Q==}
@@ -4406,6 +4421,11 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@minister/client@https://codeload.github.com/MinistryofMany/minister-client/tar.gz/6171588':
+    dependencies:
+      jose: 5.10.0
+      zod: 3.25.76
 
   '@napi-rs/wasm-runtime@1.1.5(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)':
     dependencies:
