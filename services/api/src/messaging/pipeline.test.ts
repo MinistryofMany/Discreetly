@@ -56,7 +56,7 @@ describe('message pipeline', () => {
 
     const proof = await proofFor(ctx, 'hello', epoch);
     const res = await sendMessage({ roomId: room.id, content: 'hello', proof });
-    expect(res.status).toBe('sent');
+    expect(res).toMatchObject({ status: 'sent' });
     const count = await prisma.message.count({ where: { roomId: room.id } });
     expect(count).toBe(1);
 
@@ -68,13 +68,13 @@ describe('message pipeline', () => {
   it('reports duplicate on the same proof', async () => {
     const proof = await proofFor(ctx, 'hello', epoch); // same content+epoch+messageId => same nullifier+x
     const res = await sendMessage({ roomId: room.id, content: 'hello', proof });
-    expect(res.status).toBe('duplicate');
+    expect(res).toMatchObject({ status: 'duplicate' });
   });
 
   it('bans on a colliding second message', async () => {
     const proof = await proofFor(ctx, 'different content', epoch); // same epoch+messageId, diff content => collision
     const res = await sendMessage({ roomId: room.id, content: 'different content', proof });
-    expect(res.status).toBe('banned');
+    expect(res).toMatchObject({ status: 'banned' });
     const m = await prisma.membership.findUnique({
       where: { roomId_joinNullifier: { roomId: room.id, joinNullifier: 'pipe-jn' } },
     });

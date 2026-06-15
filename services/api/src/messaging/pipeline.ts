@@ -16,7 +16,10 @@ export type SendResult =
   | { status: 'sent'; message: BroadcastMessage }
   | { status: 'duplicate' }
   | { status: 'banned' }
-  | { status: 'rejected'; reason: string };
+  | { status: 'rejected'; reason: string }
+  // Malformed/unparseable proof envelope. Distinct, typed failure so a client
+  // sending `{proof:{}}` gets a structured response instead of a 500.
+  | { ok: false; reason: 'bad-proof' };
 
 function isP2002(e: unknown): boolean {
   return typeof e === 'object' && e !== null && (e as { code?: string }).code === 'P2002';
@@ -41,7 +44,10 @@ export async function sendMessage(input: SendInput): Promise<SendResult> {
     leaves,
     currentEpoch,
   });
-  if (!verified.ok) return { status: 'rejected', reason: verified.reason };
+  if (!verified.ok) {
+    if (verified.reason === 'bad-proof') return { ok: false, reason: 'bad-proof' };
+    return { status: 'rejected', reason: verified.reason };
+  }
 
   const handleCollision = async (priorX: string, priorY: string): Promise<SendResult> => {
     await banOnCollision({

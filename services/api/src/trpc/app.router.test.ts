@@ -67,3 +67,27 @@ describe('membership.join via tRPC', () => {
     expect(res).toMatchObject({ ok: false, reason: 'policy-denied' });
   });
 });
+
+describe('message.send input hardening via tRPC', () => {
+  it('returns a typed bad-proof failure (not a 500) on a malformed proof', async () => {
+    const caller = appRouter.createCaller({ verify });
+    const res = await caller.message.send({
+      roomId,
+      content: 'hello',
+      // Empty object: no epoch / snarkProof. Must not throw an uncaught error.
+      proof: {},
+    });
+    expect(res).toEqual({ ok: false, reason: 'bad-proof' });
+  });
+
+  it('rejects content over the length cap with BAD_REQUEST', async () => {
+    const caller = appRouter.createCaller({ verify });
+    await expect(
+      caller.message.send({
+        roomId,
+        content: 'x'.repeat(16385),
+        proof: {},
+      }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+  });
+});
