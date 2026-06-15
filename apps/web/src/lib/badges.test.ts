@@ -34,14 +34,14 @@ describe('decodeBadge', () => {
   });
 
   it('maps numeric-suffixed credential types (age-over-21)', () => {
-    const badge = decodeBadge(vcJwt('MinisterAgeOver21Credential'));
+    const badge = decodeBadge(vcJwt('MinisterAgeOver21Credential', { threshold: 21 }));
     expect(badge!.type).toBe('age-over-21');
   });
 
   it('drops the credentialSubject id from attributes', () => {
-    const badge = decodeBadge(vcJwt('MinisterInviteCodeCredential', { code: 'x' }));
+    const badge = decodeBadge(vcJwt('MinisterInviteCodeCredential', { label: 'x' }));
     expect(badge!.attributes).not.toHaveProperty('id');
-    expect(badge!.attributes.code).toBe('x');
+    expect(badge!.attributes.label).toBe('x');
   });
 
   it('returns null for a non-Minister credential', () => {

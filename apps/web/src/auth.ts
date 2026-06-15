@@ -1,30 +1,37 @@
 import NextAuth from 'next-auth';
+import { ministerProvider } from '@minister/client/auth-js';
+import { badgeScopes } from '@minister/client/badges';
 
-// Auth.js v5 RP for Discreetly. Signs in via Minister using a generic OIDC
-// provider. Minister publishes /.well-known/openid-configuration, so Auth.js
-// discovers authorize/token/userinfo/jwks from the issuer URL.
+// Auth.js v5 RP for Discreetly. Signs in via Minister using the
+// `@minister/client` provider helper, which returns the same generic OIDC
+// provider config Discreetly hand-rolled before (id 'minister', EdDSA, PKCE +
+// state + nonce). Minister publishes /.well-known/openid-configuration, so
+// Auth.js discovers authorize/token/userinfo/jwks from the issuer URL.
 //
 // JWT-strategy sessions (no DB). The relevant Minister id_token claims are
 // copied onto the session so the browser can forward the id_token to the API
-// (the API re-verifies everything) and render the user.
+// (the API re-verifies everything) and render the user. The badge VC JWTs in
+// `minister_badges` are carried RAW onto the session for the client-side
+// preview decoder; the API is the sole verification authority.
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: 'jwt' },
   providers: [
-    {
-      id: 'minister',
-      name: 'Minister',
-      type: 'oidc',
-      issuer: process.env.MINISTER_ISSUER,
-      clientId: process.env.MINISTER_CLIENT_ID,
+    ministerProvider({
+      issuer: process.env.MINISTER_ISSUER!,
+      clientId: process.env.MINISTER_CLIENT_ID!,
       clientSecret: process.env.MINISTER_CLIENT_SECRET,
-      authorization: {
-        params: {
-          scope:
-            'openid profile badge:email-domain badge:invite-code badge:oauth-account badge:residency-country badge:age-over-18',
-        },
-      },
-      checks: ['pkce', 'state', 'nonce'],
-    },
+      scopes: [
+        'openid',
+        'profile',
+        ...badgeScopes([
+          'email-domain',
+          'invite-code',
+          'oauth-account',
+          'residency-country',
+          'age-over-18',
+        ]),
+      ],
+    }),
   ],
   callbacks: {
     async jwt({ token, account, profile }) {

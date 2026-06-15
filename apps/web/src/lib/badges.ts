@@ -10,21 +10,15 @@ import {
   evaluate,
   requiredScopes,
 } from '@discreetly/policy';
+import { badgeTypeOf } from '@minister/client/badges';
 
-const MINISTER_CRED = /^Minister(.+)Credential$/;
-
-/** Map a VC `type` array to the policy badge-type string (mirrors backend). */
+/**
+ * Map a VC `type` array to the Minister badge slug using the SDK's canonical
+ * vocabulary, or null if it is not a known Minister credential. This is the
+ * same slug mapping the API verifier uses, sourced from one place.
+ */
 function credentialTypeToBadgeType(vcTypes: readonly string[]): string | null {
-  const specific = vcTypes.find((t) => t !== 'VerifiableCredential');
-  if (!specific) return null;
-  const m = MINISTER_CRED.exec(specific);
-  if (!m) return null;
-  const g = m[1];
-  if (!g) return null;
-  return g
-    .replace(/([a-z])([A-Z])/g, '$1-$2')
-    .replace(/([A-Za-z])([0-9])/g, '$1-$2')
-    .toLowerCase();
+  return badgeTypeOf([...vcTypes]) ?? null;
 }
 
 function base64UrlDecode(segment: string): string {

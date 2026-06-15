@@ -13,16 +13,28 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { createHash, randomBytes } from 'node:crypto';
 import { exportJWK, generateKeyPair, SignJWT, type JWK } from 'jose';
 
-const KID = 'did:web:mock.minister#key-1';
-export const MOCK_VC_ISSUER = 'did:web:mock.minister';
 export const MOCK_CLIENT_ID = 'discreetly_dev';
+
+/**
+ * Derive the badge VC issuer DID from the runtime OIDC issuer port. The SDK
+ * verifier (`@minister/client`) expects the badge `iss` to equal
+ * `didFromIssuer(issuer)` === `did:web:localhost%3A<port>` (the colon in the
+ * host:port is percent-encoded per the did:web spec); there is no override.
+ * Signing VCs with this DID is what makes badges verify under the SDK.
+ */
+function vcIssuerForPort(port: number): string {
+  return `did:web:localhost%3A${port}`;
+}
+function kidForPort(port: number): string {
+  return `${vcIssuerForPort(port)}#key-1`;
+}
 
 const { publicKey, privateKey } = await generateKeyPair('EdDSA');
 
 let publicJwk: JWK | undefined;
-async function jwks(): Promise<{ keys: JWK[] }> {
+async function jwks(port: number): Promise<{ keys: JWK[] }> {
   publicJwk ??= await exportJWK(publicKey);
-  return { keys: [{ ...publicJwk, alg: 'EdDSA', use: 'sig', kid: KID }] };
+  return { keys: [{ ...publicJwk, alg: 'EdDSA', use: 'sig', kid: kidForPort(port) }] };
 }
 
 export interface MockBadge {
@@ -41,19 +53,20 @@ function badgeTypeToCredType(type: string): string {
   return `Minister${pascal}Credential`;
 }
 
-async function signVc(userId: string, badge: MockBadge): Promise<string> {
+async function signVc(userId: string, badge: MockBadge, port: number): Promise<string> {
   const nowSec = Math.floor(Date.now() / 1000);
   const iatSec = badge.expired ? nowSec - 120 : nowSec - (badge.ageDays ?? 0) * 86_400;
+  const vcIssuer = vcIssuerForPort(port);
   return new SignJWT({
     vc: {
       '@context': ['https://www.w3.org/ns/credentials/v2'],
       type: ['VerifiableCredential', badgeTypeToCredType(badge.type)],
-      credentialSubject: { id: `${MOCK_VC_ISSUER}:users:${userId}`, ...badge.attributes },
+      credentialSubject: { id: `${vcIssuer}:users:${userId}`, ...badge.attributes },
     },
   })
-    .setProtectedHeader({ alg: 'EdDSA', kid: KID, typ: 'vc+jwt' })
-    .setIssuer(MOCK_VC_ISSUER)
-    .setSubject(`${MOCK_VC_ISSUER}:users:${userId}`)
+    .setProtectedHeader({ alg: 'EdDSA', kid: kidForPort(port), typ: 'vc+jwt' })
+    .setIssuer(vcIssuer)
+    .setSubject(`${vcIssuer}:users:${userId}`)
     .setIssuedAt(iatSec)
     .setExpirationTime(badge.expired ? nowSec - 60 : '365d')
     .sign(privateKey);
@@ -76,13 +89,16 @@ export interface MintOpts {
 /** Mint an id_token directly (for non-browser checks). */
 export async function mintIdToken(opts: MintOpts): Promise<string> {
   const userId = opts.userId ?? opts.sub.replace(/[^a-zA-Z0-9]/g, '');
-  const minister_badges = await Promise.all((opts.badges ?? []).map((b) => signVc(userId, b)));
+  const port = Number(new URL(opts.issuer).port);
+  const minister_badges = await Promise.all(
+    (opts.badges ?? []).map((b) => signVc(userId, b, port)),
+  );
   const builder = new SignJWT({
     nonce: opts.nonce,
     ...(opts.name !== undefined && { name: opts.name }),
     minister_badges,
   })
-    .setProtectedHeader({ alg: 'EdDSA', kid: KID, typ: 'JWT' })
+    .setProtectedHeader({ alg: 'EdDSA', kid: kidForPort(port), typ: 'JWT' })
     .setIssuer(opts.issuer)
     .setSubject(opts.sub)
     .setAudience(MOCK_CLIENT_ID)
@@ -135,10 +151,13 @@ function readBody(req: IncomingMessage): Promise<string> {
  */
 const BADGE_CATALOG: Record<string, MockBadge> = {
   'email-domain': { type: 'email-domain', attributes: { domain: 'example.com' } },
-  'invite-code': { type: 'invite-code', attributes: { code: 'WELCOME' } },
-  'oauth-account': { type: 'oauth-account', attributes: { provider: 'github' } },
+  'invite-code': { type: 'invite-code', attributes: { label: 'WELCOME' } },
+  'oauth-account': {
+    type: 'oauth-account',
+    attributes: { provider: 'github', accountId: 'gh-123' },
+  },
   'residency-country': { type: 'residency-country', attributes: { country: 'US' } },
-  'age-over-18': { type: 'age-over-18', attributes: { over: true } },
+  'age-over-18': { type: 'age-over-18', attributes: { threshold: 18 } },
 };
 
 export interface MockIssuerHandle {
@@ -196,7 +215,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, issuer: string)
   }
 
   if (path === '/.well-known/jwks.json') {
-    return json(res, await jwks());
+    return json(res, await jwks(Number(new URL(issuer).port)));
   }
 
   if (path === '/oidc/authorize') return authorize(req, res, url);
