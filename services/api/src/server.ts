@@ -7,6 +7,14 @@ import { getConfig } from './config.js';
 
 const { API_PORT } = getConfig();
 
+/** Extract the token from an `Authorization: Bearer <token>` header value. */
+function bearer(headerValue?: string): string | undefined {
+  if (!headerValue) return undefined;
+  const [scheme, token] = headerValue.split(' ');
+  if (scheme?.toLowerCase() !== 'bearer' || !token) return undefined;
+  return token;
+}
+
 const httpServer = createHTTPServer({
   router: appRouter,
   middleware: (req, res, next) => {
@@ -20,7 +28,10 @@ const httpServer = createHTTPServer({
     }
     next();
   },
-  createContext: () => ({ verify: getProductionVerifier() }),
+  createContext: ({ req }) => ({
+    verify: getProductionVerifier(),
+    adminIdToken: bearer(req.headers.authorization),
+  }),
 });
 
 const allowedOrigins = (
