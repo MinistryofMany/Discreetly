@@ -6,6 +6,15 @@ import { getProductionVerifier } from './minister/production-verifier.js';
 import { getConfig } from './config.js';
 
 export type { AppRouter } from './trpc/app.router.js';
+export type {
+  PublicRoom,
+  PublicRoomSummary,
+  AdminRoom,
+  AdminLeaf,
+  AdminMembership,
+  AuditLogRow,
+  MessageListItem,
+} from './trpc/outputs.js';
 
 const { API_PORT } = getConfig();
 

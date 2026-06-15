@@ -121,7 +121,7 @@ function roomToFormState(room: AdminRoom): RoomFormState {
   let policyRoot: PolicyBuilderNode = makeOpenPolicy();
   let openPolicy = true;
   try {
-    policyRoot = deserializeNode(room.accessPolicy as Record<string, unknown> as never);
+    policyRoot = deserializeNode(room.accessPolicy as unknown as never);
     openPolicy =
       policyRoot.kind === 'allOf' && (policyRoot as { children: unknown[] }).children.length === 0;
   } catch {
