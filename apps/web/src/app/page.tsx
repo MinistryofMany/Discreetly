@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { auth } from '@/auth';
 import { SignInButton, SignOutButton } from '@/components/auth-buttons';
 import { RoomList } from '@/components/room-list';
+import { AdminLink } from '@/components/admin-link';
 import { Button } from '@/components/ui/button';
 
 export default async function HomePage() {
@@ -17,6 +18,7 @@ export default async function HomePage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <AdminLink />
           <Button asChild variant="outline">
             <Link href="/identity">Identity</Link>
           </Button>
