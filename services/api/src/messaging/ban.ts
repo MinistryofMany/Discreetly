@@ -5,6 +5,10 @@ import {
   getRateCommitmentHash,
 } from '@discreetly/crypto';
 import { banMembershipByLeaf, type BanByLeafOutcome } from '../admin/ban-admin.js';
+import { audit } from '../admin/audit.js';
+
+/** Synthetic actor recorded on audit rows for RLN rate-limit collision bans. */
+export const RLN_COLLISION_ACTOR = 'system:rln-collision';
 
 export interface BanInput {
   roomId: string;
@@ -31,12 +35,27 @@ export async function banOnCollision(input: BanInput): Promise<BanOutcome> {
     input.userMessageLimit,
   ).toString();
 
-  return prisma.$transaction(async (tx) =>
-    banMembershipByLeaf(tx, {
+  return prisma.$transaction(async (tx) => {
+    const outcome = await banMembershipByLeaf(tx, {
       roomId: input.roomId,
       rateCommitment,
       reason: BanReason.RATE_LIMIT_COLLISION,
       shamirSecret: secret.toString(),
-    }),
-  );
+    });
+    if (!outcome.banned) return outcome;
+    await audit(
+      {
+        actor: RLN_COLLISION_ACTOR,
+        action: 'RATE_LIMIT_COLLISION',
+        target: input.roomId,
+        metadata: {
+          joinNullifier: outcome.joinNullifier,
+          rateCommitment,
+          prunedLeaves: outcome.prunedLeaves,
+        },
+      },
+      tx,
+    );
+    return outcome;
+  });
 }

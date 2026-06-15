@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { prisma, MembershipStatus } from '@discreetly/db';
 import { makeProofCtx, proofFor } from '../test/rln-fixtures.js';
 import { joinRoom } from '../membership/membership.js';
-import { banOnCollision } from './ban.js';
+import { banOnCollision, RLN_COLLISION_ACTOR } from './ban.js';
 
 const ctx = makeProofCtx(54321n, 1n); // userMessageLimit must match the room's (1)
 let room: { id: string; rlnIdentifier: string; userMessageLimit: number; maxDevices: number };
@@ -27,6 +27,7 @@ beforeAll(async () => {
   };
 });
 afterAll(async () => {
+  await prisma.auditLog.deleteMany({ where: { target: room.id } });
   await prisma.ban.deleteMany({ where: { roomId: room.id } });
   await prisma.room.delete({ where: { id: room.id } });
   await prisma.$disconnect();
@@ -70,6 +71,18 @@ describe('banOnCollision', () => {
     const ban = await prisma.ban.findFirst({ where: { roomId: room.id, joinNullifier } });
     expect(ban?.reason).toBe('RATE_LIMIT_COLLISION');
     expect(ban?.shamirSecret).toBeTruthy();
+
+    // the collision ban writes exactly one audit row in the same transaction
+    const audits = await prisma.auditLog.findMany({
+      where: { target: room.id, action: 'RATE_LIMIT_COLLISION' },
+    });
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      actor: RLN_COLLISION_ACTOR,
+      action: 'RATE_LIMIT_COLLISION',
+      target: room.id,
+    });
+    expect(audits[0]?.metadata).toMatchObject({ joinNullifier, prunedLeaves: 1 });
 
     // a banned membership cannot rejoin
     const rejoin = await joinRoom({ room, joinNullifier, identityCommitment: '999' });
