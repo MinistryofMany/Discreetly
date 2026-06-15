@@ -4,6 +4,7 @@ import {
   type VerifiedBadge as VerifiedBadgeSdk,
 } from '@minister/client';
 import type { VerifiedBadge } from '@discreetly/policy';
+import { logger } from '../log.js';
 
 export interface VerifiedIdentity {
   sub: string;
@@ -66,7 +67,25 @@ export function makeVerifier(deps: VerifierDeps) {
     const claims = await verifier.verifyIdToken(idToken);
     // Passing the raw id_token re-verifies the wrapper (issuer/audience/key)
     // before reading its badges; individual bad badges land in `rejected`.
-    const { badges } = await verifier.verifyBadges(idToken);
+    const { badges, rejected } = await verifier.verifyBadges(idToken);
+    if (rejected.length > 0) {
+      // Observability for misconfiguration (e.g. an issuer-host vs VC-issuer
+      // DID mismatch silently rejecting every badge) and forged-badge probing.
+      // The verified `badges` returned below are unchanged: this is a
+      // non-throwing side effect that preserves fail-closed gating. Log only a
+      // SAFE summary - the per-entry `error.message` - and NEVER the raw VC
+      // JWT (`rejected[].raw`), which may carry token material or PII. The
+      // badge slug/type is not cheaply available without decoding `raw`, so it
+      // is intentionally omitted.
+      logger.warn(
+        {
+          sub: claims.sub,
+          rejectedCount: rejected.length,
+          rejectedReasons: rejected.map((r) => r.error.message),
+        },
+        'discarded unverifiable badge(s) from id_token',
+      );
+    }
     return {
       sub: claims.sub,
       badges: badges.map((b: VerifiedBadgeSdk) => ({
