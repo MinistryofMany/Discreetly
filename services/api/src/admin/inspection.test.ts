@@ -1,9 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { prisma } from '@discreetly/db';
 import { createLocalJWKSet } from 'jose';
 import { appRouter } from '../trpc/app.router.js';
 import { makeVerifier } from '../minister/verify.js';
 import { roomMessages, type RoomBroadcast } from '../realtime/broadcast.js';
+import { waitFor, waitForSubscriber, READINESS_PING_KIND } from '../test/wait.js';
 import {
   jwks,
   signIdToken,
@@ -19,7 +21,7 @@ const mockVerifier = makeVerifier({
   jwks: createLocalJWKSet(await jwks()),
 });
 
-const ADMIN_SUB = `inspection-admin-${Date.now()}`;
+const ADMIN_SUB = `inspection-admin-${randomUUID()}`;
 let roomId: string;
 let membershipJoinNullifier: string;
 
@@ -29,13 +31,15 @@ async function adminCaller() {
 }
 
 beforeAll(async () => {
-  await prisma.adminUser.create({ data: { pairwiseSub: ADMIN_SUB, label: 'inspection test admin' } });
+  await prisma.adminUser.create({
+    data: { pairwiseSub: ADMIN_SUB, label: 'inspection test admin' },
+  });
 
   const room = await prisma.room.create({
     data: {
       name: 'Inspection Test Room',
-      slug: `inspection-${Date.now()}`,
-      rlnIdentifier: `${Date.now() + 99}`,
+      slug: `inspection-${randomUUID()}`,
+      rlnIdentifier: `${Date.now()}${Math.floor(Math.random() * 1_000_000)}`,
       rateLimit: 10_000,
       userMessageLimit: 5,
       accessPolicy: { allOf: [] },
@@ -43,7 +47,7 @@ beforeAll(async () => {
   });
   roomId = room.id;
 
-  membershipJoinNullifier = `jn-inspect-${Date.now()}`;
+  membershipJoinNullifier = `jn-inspect-${randomUUID()}`;
   const membership = await prisma.membership.create({
     data: {
       roomId,
@@ -93,7 +97,7 @@ describe('admin inspection', () => {
       const caller = await adminCaller();
 
       // Create a second membership with a revoked leaf
-      const revokedJn = `jn-revoked-${Date.now()}`;
+      const revokedJn = `jn-revoked-${randomUUID()}`;
       const mem2 = await prisma.membership.create({
         data: { roomId, joinNullifier: revokedJn },
       });
@@ -143,10 +147,12 @@ describe('admin inspection', () => {
       const caller = await adminCaller();
       await caller.admin.broadcast({ roomId, text: 'action-filter' });
 
-      const logs = await caller.admin.auditLog({ action: 'SYSTEM_BROADCAST' });
+      // Scope by this run's actor so concurrent shared-DB runs do not cross-match.
+      const logs = await caller.admin.auditLog({ actor: ADMIN_SUB, action: 'SYSTEM_BROADCAST' });
       expect(logs.length).toBeGreaterThanOrEqual(1);
       for (const log of logs) {
         expect(log.action).toBe('SYSTEM_BROADCAST');
+        expect(log.actor).toBe(ADMIN_SUB);
       }
     });
 
@@ -180,9 +186,9 @@ describe('admin inspection', () => {
 
     it('rejects limit above 500', async () => {
       const caller = await adminCaller();
-      await expect(
-        caller.admin.auditLog({ limit: 501 }),
-      ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+      await expect(caller.admin.auditLog({ limit: 501 })).rejects.toMatchObject({
+        code: 'BAD_REQUEST',
+      });
     });
   });
 
@@ -190,25 +196,28 @@ describe('admin inspection', () => {
     it('sends a system message that a roomMessages subscriber receives', async () => {
       const ac = new AbortController();
       const received: RoomBroadcast[] = [];
+      const realMessages = (): RoomBroadcast[] =>
+        received.filter((m) => (m as { kind?: string }).kind !== READINESS_PING_KIND);
 
       const gen = roomMessages(roomId, ac.signal);
       const collecting = (async () => {
         for await (const msg of gen) received.push(msg);
       })();
 
-      // Wait for Redis subscriber to attach
-      await new Promise((r) => setTimeout(r, 200));
+      // Wait until the Redis subscriber is actually attached (pub/sub is not buffered).
+      await waitForSubscriber(roomId, () => received.length > 0);
 
       const caller = await adminCaller();
       await caller.admin.broadcast({ roomId, text: 'hello from admin' });
 
-      await new Promise((r) => setTimeout(r, 200));
+      await waitFor(() => realMessages().length > 0);
 
       ac.abort();
       await collecting;
 
-      expect(received).toHaveLength(1);
-      const msg = received[0]!;
+      const real = realMessages();
+      expect(real).toHaveLength(1);
+      const msg = real[0]!;
       expect(msg.kind).toBe('system');
       if (msg.kind === 'system') {
         expect(msg.text).toBe('hello from admin');

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { prisma, MembershipStatus, BanReason } from '@discreetly/db';
 import { createLocalJWKSet } from 'jose';
@@ -19,7 +20,7 @@ const mockVerifier = makeVerifier({
   jwks: createLocalJWKSet(await jwks()),
 });
 
-const ADMIN_SUB = `ban-admin-${Date.now()}`;
+const ADMIN_SUB = `ban-admin-${randomUUID()}`;
 let roomId: string;
 let rlnIdentifier: string;
 
@@ -33,8 +34,9 @@ beforeAll(async () => {
   const room = await prisma.room.create({
     data: {
       name: 'Ban Test',
-      slug: `ban-${Date.now()}`,
-      rlnIdentifier: `${Date.now()}`,
+      slug: `ban-${randomUUID()}`,
+      // Numeric but unique across concurrent shared-DB runs.
+      rlnIdentifier: `${Date.now()}${Math.floor(Math.random() * 1_000_000)}`,
       rateLimit: 10_000,
       userMessageLimit: 5,
       maxDevices: 2,
@@ -56,7 +58,7 @@ afterAll(async () => {
 
 describe('admin ban management', () => {
   it('bans by identity commitment: membership BANNED, leaves pruned, Ban row, join rejected', async () => {
-    const sub = `victim-ic-${Date.now()}`;
+    const sub = `victim-ic-${randomUUID()}`;
     const jn = joinNullifier(sub, BigInt(rlnIdentifier)).toString();
     const identityCommitment = '424242';
     const idToken = await signIdToken({ sub });
@@ -90,7 +92,7 @@ describe('admin ban management', () => {
   });
 
   it('bans by join-nullifier with no prior membership: creates BANNED membership, join rejected', async () => {
-    const sub = `victim-jn-${Date.now()}`;
+    const sub = `victim-jn-${randomUUID()}`;
     const jn = joinNullifier(sub, BigInt(rlnIdentifier)).toString();
 
     const before = await prisma.membership.findUnique({
@@ -115,7 +117,7 @@ describe('admin ban management', () => {
   });
 
   it('unbans: membership ACTIVE, Ban rows gone, join succeeds again', async () => {
-    const sub = `victim-unban-${Date.now()}`;
+    const sub = `victim-unban-${randomUUID()}`;
     const jn = joinNullifier(sub, BigInt(rlnIdentifier)).toString();
 
     const caller = await adminCaller();
@@ -159,7 +161,7 @@ describe('admin ban management', () => {
   });
 
   it('each op writes exactly one AuditLog row with the expected action + actor', async () => {
-    const sub = `victim-audit-${Date.now()}`;
+    const sub = `victim-audit-${randomUUID()}`;
     const jn = joinNullifier(sub, BigInt(rlnIdentifier)).toString();
     const identityCommitment = '5150';
     const idToken = await signIdToken({ sub });
@@ -191,7 +193,7 @@ describe('admin ban management', () => {
     });
     expect(unbanLogs).toHaveLength(1);
 
-    const sub2 = `victim-audit2-${Date.now()}`;
+    const sub2 = `victim-audit2-${randomUUID()}`;
     const jn2 = joinNullifier(sub2, BigInt(rlnIdentifier)).toString();
     await caller.admin.banByJoinNullifier({ roomId, joinNullifier: jn2 });
     const jnLogs = await prisma.auditLog.findMany({
