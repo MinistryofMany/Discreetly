@@ -8,9 +8,11 @@ import { getConfig } from './config.js';
 const { API_PORT } = getConfig();
 
 /** Extract the token from an `Authorization: Bearer <token>` header value. */
-function bearer(headerValue?: string): string | undefined {
+function bearer(headerValue?: string | string[]): string | undefined {
   if (!headerValue) return undefined;
-  const [scheme, token] = headerValue.split(' ');
+  const value = Array.isArray(headerValue) ? headerValue[0] : headerValue;
+  if (!value) return undefined;
+  const [scheme, token] = value.split(' ');
   if (scheme?.toLowerCase() !== 'bearer' || !token) return undefined;
   return token;
 }
@@ -19,7 +21,7 @@ const httpServer = createHTTPServer({
   router: appRouter,
   middleware: (req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Headers', 'content-type');
+    res.setHeader('Access-Control-Allow-Headers', 'content-type, authorization');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
