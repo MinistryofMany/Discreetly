@@ -1,15 +1,20 @@
 import { createHash, randomBytes } from 'node:crypto';
 
-const DEV_DB = 'postgresql://USER:PASS@localhost:5433/DB?schema=public';
+// Opt-in: the DB-mediated grant reaches into Minister's dev DB, whose role/name
+// move with the provider (e.g. the Tessera->Minister rename changed it). Set
+// MINISTER_DEV_DATABASE_URL to enable; unset => the live test skips. (The
+// authoritative live proof is Plan 4's browser e2e against the settled provider.)
+const DEV_DB = process.env.MINISTER_DEV_DATABASE_URL;
 const REDIRECT = 'http://localhost:3001/api/auth/callback/minister';
 const b64url = (b: Buffer) => b.toString('base64url');
 
 /**
  * Obtain a REAL Minister id_token for the seeded dev user + their email-domain
  * badge by inserting a consent row directly and exchanging it at the live
- * /oidc/token. Returns null if the live provider or dev DB is unreachable.
+ * /oidc/token. Returns null if not configured or the provider/DB is unreachable.
  */
 export async function getRealMinisterIdToken(): Promise<string | null> {
+  if (!DEV_DB) return null;
   let pg: typeof import('pg');
   try {
     pg = await import('pg');
