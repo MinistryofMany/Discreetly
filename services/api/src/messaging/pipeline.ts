@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import { prisma } from '@discreetly/db';
 import type { RLNFullProof } from 'rlnjs';
 import { verifyMessage } from './verify-message.js';
 import { checkCollision } from './collision.js';
+import { checkEphemeralCollision } from './ephemeral-collision.js';
 import { banOnCollision } from './ban.js';
 import { publishMessage, type BroadcastMessage } from '../realtime/broadcast.js';
 
@@ -60,6 +62,37 @@ export async function sendMessage(input: SendInput): Promise<SendResult> {
     });
     return { status: 'banned' };
   };
+
+  // EPHEMERAL rooms are a pure transport relay: verify -> dedup against a
+  // transient (auto-expiring) per-epoch nullifier record -> fan out over Redis
+  // -> forget. No Message row is ever written; bans (membership state) still
+  // persist via the shared collision path.
+  if (room.persistence === 'EPHEMERAL') {
+    // TTL covers the +/-1 epoch acceptance window (3 epochs wide) with margin
+    // so a nullifier's point outlives every epoch in which its proof is valid.
+    const ttlMs = room.rateLimit * 4;
+    const eph = await checkEphemeralCollision({
+      roomId: room.id,
+      epoch: verified.epoch,
+      nullifier: verified.nullifier,
+      x: verified.x,
+      y: verified.y,
+      ttlMs,
+    });
+    if (eph.kind === 'duplicate') return { status: 'duplicate' };
+    if (eph.kind === 'collision') return handleCollision(eph.prior.x, eph.prior.y);
+
+    const message: BroadcastMessage = {
+      id: randomUUID(),
+      roomId: room.id,
+      epoch: verified.epoch.toString(),
+      content: input.content,
+      sessionColor: input.sessionColor ?? undefined,
+      createdAt: new Date().toISOString(),
+    };
+    await publishMessage(message);
+    return { status: 'sent', message };
+  }
 
   const collision = await checkCollision({
     roomId: room.id,
