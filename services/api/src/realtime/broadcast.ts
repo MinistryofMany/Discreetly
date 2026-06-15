@@ -14,17 +14,31 @@ export async function publishMessage(msg: BroadcastMessage): Promise<void> {
 }
 
 /** Async iterator yielding messages published to a room until the signal aborts. */
-export async function* roomMessages(
-  roomId: string,
-  signal: AbortSignal,
-): AsyncGenerator<BroadcastMessage> {
+export async function* roomMessages(roomId: string, signal: AbortSignal): AsyncGenerator<BroadcastMessage> {
   const sub = makeSubscriber();
   const queue: BroadcastMessage[] = [];
   let wake: (() => void) | undefined;
+
+  sub.on('error', (e) => {
+    // An unhandled 'error' event on the ioredis EventEmitter would throw; absorb + log.
+    console.error('[broadcast] subscriber error', e);
+  });
   sub.on('message', (_ch, payload) => {
-    queue.push(JSON.parse(payload) as BroadcastMessage);
+    let parsed: BroadcastMessage;
+    try {
+      parsed = JSON.parse(payload) as BroadcastMessage;
+    } catch (e) {
+      console.error('[broadcast] dropping malformed payload', e);
+      return;
+    }
+    queue.push(parsed);
     wake?.();
   });
+
+  // Exactly ONE abort listener for the whole subscription (waking the current sleep).
+  const onAbort = (): void => wake?.();
+  signal.addEventListener('abort', onAbort, { once: true });
+
   await sub.subscribe(roomChannel(roomId));
   try {
     while (!signal.aborted) {
@@ -32,11 +46,15 @@ export async function* roomMessages(
       if (signal.aborted) break;
       await new Promise<void>((resolve) => {
         wake = resolve;
-        signal.addEventListener('abort', () => resolve(), { once: true });
       });
       wake = undefined;
     }
   } finally {
-    await sub.quit();
+    signal.removeEventListener('abort', onAbort);
+    try {
+      await sub.quit();
+    } catch {
+      sub.disconnect();
+    }
   }
 }
