@@ -3,7 +3,9 @@
 import { useRef, useState } from 'react';
 import { SessionProvider, useSession } from 'next-auth/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Toaster } from 'sonner';
 import { TRPCProvider, makeTRPCClient } from '@/lib/trpc';
+import { IdentityProvider } from '@/lib/identity-context';
 
 function makeQueryClient() {
   return new QueryClient({
@@ -32,7 +34,7 @@ function TRPCWithSession({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <TRPCProvider trpcClient={trpcClient} queryClient={queryClient}>
-        {children}
+        <IdentityProvider>{children}</IdentityProvider>
       </TRPCProvider>
     </QueryClientProvider>
   );
@@ -42,6 +44,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <SessionProvider>
       <TRPCWithSession>{children}</TRPCWithSession>
+      <Toaster position="top-center" richColors closeButton />
     </SessionProvider>
   );
 }

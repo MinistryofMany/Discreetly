@@ -1,17 +1,11 @@
 'use client';
 
+import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
+import { useSession } from 'next-auth/react';
 import { useTRPC } from '@/lib/trpc';
-
-// Non-secret room fields returned by `room.listPublic` (see PUBLIC_ROOM_FIELDS
-// in services/api). Typed locally to avoid instantiating the full AppRouter
-// output type, whose recursive Json policy field trips TS2589.
-type PublicRoom = {
-  id: string;
-  name: string;
-  slug: string;
-  description: string | null;
-};
+import { computeEligibility } from '@/lib/badges';
+import { asPolicyNode, type PublicRoom } from '@/lib/room-types';
 import {
   Card,
   CardContent,
@@ -19,13 +13,63 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+
+function RoomCard({ room }: { room: PublicRoom }) {
+  const { data: session } = useSession();
+  const badges = session?.ministerBadges ?? [];
+  const eligibility = computeEligibility(asPolicyNode(room.accessPolicy), badges);
+  const open = eligibility.requiredScopes.length === 0;
+
+  return (
+    <Link href={`/rooms/${room.id}`} className="block focus:outline-none">
+      <Card className="transition-colors hover:border-primary/50">
+        <CardHeader className="pb-3">
+          <div className="flex items-start justify-between gap-3">
+            <CardTitle className="text-lg">{room.name}</CardTitle>
+            <div className="flex shrink-0 flex-wrap gap-1.5">
+              {room.encryption === 'AES' ? (
+                <Badge variant="secondary">encrypted</Badge>
+              ) : null}
+              {open ? (
+                <Badge variant="success">open</Badge>
+              ) : eligibility.satisfied ? (
+                <Badge variant="success">you can join</Badge>
+              ) : (
+                <Badge variant="outline">badges required</Badge>
+              )}
+            </div>
+          </div>
+          {room.description ? (
+            <CardDescription>{room.description}</CardDescription>
+          ) : null}
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center gap-1.5 pt-0 text-xs text-muted-foreground">
+          <span className="font-mono">{room.slug}</span>
+          {eligibility.requiredScopes.map((scope) => (
+            <Badge key={scope} variant="outline" className="font-normal">
+              {scope.replace(/^badge:/, '')}
+            </Badge>
+          ))}
+        </CardContent>
+      </Card>
+    </Link>
+  );
+}
 
 export function RoomList() {
   const trpc = useTRPC();
   const rooms = useQuery(trpc.room.listPublic.queryOptions());
 
   if (rooms.isLoading) {
-    return <p className="text-sm text-muted-foreground">Loading rooms...</p>;
+    return (
+      <div className="grid gap-3">
+        {[0, 1, 2].map((i) => (
+          <Skeleton key={i} className="h-28 w-full" />
+        ))}
+      </div>
+    );
   }
 
   if (rooms.isError) {
@@ -42,19 +86,9 @@ export function RoomList() {
 
   return (
     <ul className="grid gap-3">
-      {rooms.data.map((room: PublicRoom) => (
+      {(rooms.data as unknown as PublicRoom[]).map((room) => (
         <li key={room.id}>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">{room.name}</CardTitle>
-              {room.description ? (
-                <CardDescription>{room.description}</CardDescription>
-              ) : null}
-            </CardHeader>
-            <CardContent className="text-xs text-muted-foreground">
-              {room.slug}
-            </CardContent>
-          </Card>
+          <RoomCard room={room} />
         </li>
       ))}
     </ul>
