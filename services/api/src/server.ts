@@ -23,7 +23,17 @@ const httpServer = createHTTPServer({
   createContext: () => ({ verify: getProductionVerifier() }),
 });
 
-const wss = new WebSocketServer({ server: httpServer });
+const allowedOrigins = (process.env.ALLOWED_WS_ORIGINS ?? 'http://localhost:3000,http://localhost:5173')
+  .split(',').map((o) => o.trim()).filter(Boolean);
+const wss = new WebSocketServer({
+  server: httpServer,
+  verifyClient: (info, cb) => {
+    const origin = info.origin;
+    // No Origin = non-browser client (allowed). Browser origins must be allowlisted.
+    if (!origin || allowedOrigins.includes(origin)) cb(true);
+    else cb(false, 403, 'Forbidden origin');
+  },
+});
 applyWSSHandler({
   wss,
   router: appRouter,
