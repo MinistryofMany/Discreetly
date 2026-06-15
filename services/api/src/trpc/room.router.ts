@@ -5,29 +5,27 @@ import { router, publicProcedure } from './trpc.js';
 import { assertRoomReadable } from '../gate/read-access.js';
 
 export const roomRouter = router({
-  get: publicProcedure
-    .input(z.object({ id: z.string() }))
-    .query(async ({ input }) =>
-      prisma.room.findUnique({
-        where: { id: input.id },
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          description: true,
-          rlnIdentifier: true,
-          rateLimit: true,
-          userMessageLimit: true,
-          maxDevices: true,
-          visibility: true,
-          persistence: true,
-          encryption: true,
-          accessPolicy: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      }),
-    ),
+  get: publicProcedure.input(z.object({ id: z.string() })).query(async ({ input }) =>
+    prisma.room.findUnique({
+      where: { id: input.id },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        description: true,
+        rlnIdentifier: true,
+        rateLimit: true,
+        userMessageLimit: true,
+        maxDevices: true,
+        visibility: true,
+        persistence: true,
+        encryption: true,
+        accessPolicy: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    }),
+  ),
   listPublic: publicProcedure.query(async () =>
     prisma.room.findMany({ where: { visibility: 'PUBLIC' }, orderBy: { createdAt: 'desc' } }),
   ),

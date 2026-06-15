@@ -14,7 +14,10 @@ export async function publishMessage(msg: BroadcastMessage): Promise<void> {
 }
 
 /** Async iterator yielding messages published to a room until the signal aborts. */
-export async function* roomMessages(roomId: string, signal: AbortSignal): AsyncGenerator<BroadcastMessage> {
+export async function* roomMessages(
+  roomId: string,
+  signal: AbortSignal,
+): AsyncGenerator<BroadcastMessage> {
   const sub = makeSubscriber();
   const queue: BroadcastMessage[] = [];
   let wake: (() => void) | undefined;
