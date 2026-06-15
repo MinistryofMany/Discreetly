@@ -13,29 +13,40 @@ import { audit } from './audit.js';
 import { PUBLIC_ROOM_FIELDS } from '../trpc/room-fields.js';
 import { publishSystem } from '../realtime/broadcast.js';
 
+/** Minimum length for an AES room password, enforced server-side. */
+const AES_MIN_PASSWORD_LENGTH = 12;
+
 const roomAdminRouter = router({
   create: adminProcedure
     .input(
       z.object({
-        name: z.string().min(1),
-        slug: z.string().min(1),
-        description: z.string().optional(),
+        name: z.string().min(1).max(200),
+        slug: z.string().min(1).max(100),
+        description: z.string().max(2000).optional(),
         rateLimit: z.number().int().positive(),
         userMessageLimit: z.number().int().positive(),
         maxDevices: z.number().int().positive().optional(),
         visibility: z.enum(['PUBLIC', 'PRIVATE']).optional(),
         persistence: z.enum(['PERSISTENT', 'EPHEMERAL']).optional(),
         encryption: z.enum(['PLAINTEXT', 'AES']).optional(),
-        password: z.string().optional(),
+        password: z.string().max(512).optional(),
         accessPolicy: z.unknown(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
       const parsedPolicy = validatePolicyInput(input.accessPolicy);
 
-      // AES rooms require a password
-      if (input.encryption === 'AES' && !input.password) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'password required for AES rooms' });
+      // AES rooms require a password with a minimum length (server-side floor).
+      if (input.encryption === 'AES') {
+        if (!input.password) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'password required for AES rooms' });
+        }
+        if (input.password.length < AES_MIN_PASSWORD_LENGTH) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: `AES room password must be at least ${AES_MIN_PASSWORD_LENGTH} characters`,
+          });
+        }
       }
 
       const passwordHash = input.password ? await hashRoomPassword(input.password) : undefined;
@@ -95,25 +106,41 @@ const roomAdminRouter = router({
     .input(
       z.object({
         id: z.string(),
-        name: z.string().min(1).optional(),
-        slug: z.string().min(1).optional(),
-        description: z.string().optional(),
+        name: z.string().min(1).max(200).optional(),
+        slug: z.string().min(1).max(100).optional(),
+        description: z.string().max(2000).optional(),
         rateLimit: z.number().int().positive().optional(),
         userMessageLimit: z.number().int().positive().optional(),
         maxDevices: z.number().int().positive().optional(),
         visibility: z.enum(['PUBLIC', 'PRIVATE']).optional(),
         persistence: z.enum(['PERSISTENT', 'EPHEMERAL']).optional(),
         encryption: z.enum(['PLAINTEXT', 'AES']).optional(),
-        password: z.string().optional(),
+        password: z.string().max(512).optional(),
         accessPolicy: z.unknown().optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
       const existing = await prisma.room.findUnique({
         where: { id: input.id },
-        select: { id: true, userMessageLimit: true },
+        select: { id: true, userMessageLimit: true, encryption: true },
       });
       if (!existing) throw new TRPCError({ code: 'NOT_FOUND', message: 'room not found' });
+
+      // Enforce the AES password floor on update. The room is AES if the update
+      // sets it to AES or it already is and is not being changed away.
+      const willBeAes =
+        input.encryption === 'AES' ||
+        (input.encryption === undefined && existing.encryption === 'AES');
+      if (
+        willBeAes &&
+        input.password !== undefined &&
+        input.password.length < AES_MIN_PASSWORD_LENGTH
+      ) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `AES room password must be at least ${AES_MIN_PASSWORD_LENGTH} characters`,
+        });
+      }
 
       // Changing userMessageLimit invalidates every stored rateCommitment (it is
       // hashed with the limit), which would break the tree and ban-by-IC matching
@@ -282,7 +309,7 @@ export const adminRouter = router({
     }),
 
   broadcast: adminProcedure
-    .input(z.object({ roomId: z.string(), text: z.string().min(1) }))
+    .input(z.object({ roomId: z.string(), text: z.string().min(1).max(4096) }))
     .mutation(async ({ input, ctx }) => {
       const room = await prisma.room.findUnique({
         where: { id: input.roomId },

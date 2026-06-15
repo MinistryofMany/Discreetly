@@ -11,9 +11,11 @@ export const messageRouter = router({
     .input(
       z.object({
         roomId: z.string(),
-        content: z.string(),
+        // Cap attacker-controlled message size (storage/bandwidth DoS). AES
+        // ciphertext is larger than plaintext, so the bound is generous.
+        content: z.string().max(16384),
         proof: z.unknown(),
-        sessionColor: z.string().optional(),
+        sessionColor: z.string().max(64).optional(),
       }),
     )
     .mutation(async ({ input }) =>
