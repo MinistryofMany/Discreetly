@@ -1,9 +1,32 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { callProcedure } from '@trpc/server/unstable-core-do-not-import';
+import { prisma } from '@discreetly/db';
 import { appRouter } from './app.router.js';
 import { publishMessage, type BroadcastMessage } from '../realtime/broadcast.js';
 
 const noopVerify = async () => ({ sub: 'x', badges: [] as never[] });
+
+let testRoomId: string;
+
+beforeAll(async () => {
+  const room = await prisma.room.create({
+    data: {
+      name: 'Subscribe Test Room',
+      slug: `sub-test-${Date.now()}`,
+      rlnIdentifier: String(Date.now() + 7),
+      rateLimit: 10_000,
+      userMessageLimit: 5,
+      visibility: 'PUBLIC',
+      accessPolicy: {},
+    },
+  });
+  testRoomId = room.id;
+});
+
+afterAll(async () => {
+  await prisma.room.delete({ where: { id: testRoomId } });
+  await prisma.$disconnect();
+});
 
 describe('message.subscribe', () => {
   it('yields a message published to the room', async () => {
@@ -14,8 +37,8 @@ describe('message.subscribe', () => {
       ctx: { verify: noopVerify },
       path: 'message.subscribe',
       type: 'subscription',
-      input: { roomId: 'sub-test-room' },
-      getRawInput: async () => ({ roomId: 'sub-test-room' }),
+      input: { roomId: testRoomId },
+      getRawInput: async () => ({ roomId: testRoomId }),
       signal: ac.signal,
       batchIndex: 0,
     });
@@ -33,7 +56,7 @@ describe('message.subscribe', () => {
 
     const msg: BroadcastMessage = {
       id: 'm1',
-      roomId: 'sub-test-room',
+      roomId: testRoomId,
       epoch: '1',
       content: 'hi',
       createdAt: new Date().toISOString(),
