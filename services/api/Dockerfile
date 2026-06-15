@@ -37,9 +37,15 @@ RUN apt-get update \
 
 RUN corepack enable
 
+# Run as a non-root user. The node:20-bookworm-slim image ships a built-in
+# `node` user (uid 1000 / gid 1000); use it directly.
+RUN chown -R node:node /app
+
 # Carry over the installed workspace (node_modules with the generated Prisma
 # client) and the source tree that tsx executes.
-COPY --from=deps /app /app
+COPY --from=deps --chown=node:node /app /app
+
+USER node
 
 EXPOSE 3002
 
