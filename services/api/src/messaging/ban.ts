@@ -1,9 +1,10 @@
-import { prisma, BanReason, MembershipStatus } from '@discreetly/db';
+import { prisma, BanReason } from '@discreetly/db';
 import {
   shamirRecovery,
   getIdentityCommitmentFromSecret,
   getRateCommitmentHash,
 } from '@discreetly/crypto';
+import { banMembershipByLeaf, type BanByLeafOutcome } from '../admin/ban-admin.js';
 
 export interface BanInput {
   roomId: string;
@@ -14,9 +15,7 @@ export interface BanInput {
   y2: string; // new (colliding) point
 }
 
-export type BanOutcome =
-  | { banned: true; joinNullifier: string; prunedLeaves: number }
-  | { banned: false; reason: 'no-leaf' };
+export type BanOutcome = BanByLeafOutcome;
 
 /** Recover the spammer's secret via Shamir, find their leaf, ban the membership (prune all its leaves). */
 export async function banOnCollision(input: BanInput): Promise<BanOutcome> {
@@ -32,34 +31,12 @@ export async function banOnCollision(input: BanInput): Promise<BanOutcome> {
     input.userMessageLimit,
   ).toString();
 
-  return prisma.$transaction(async (tx) => {
-    const leaf = await tx.membershipLeaf.findUnique({
-      where: { roomId_rateCommitment: { roomId: input.roomId, rateCommitment } },
-      select: { membershipId: true },
-    });
-    if (!leaf) return { banned: false as const, reason: 'no-leaf' as const };
-
-    const membership = await tx.membership.update({
-      where: { id: leaf.membershipId },
-      data: { status: MembershipStatus.BANNED },
-      select: { joinNullifier: true },
-    });
-    const pruned = await tx.membershipLeaf.deleteMany({
-      where: { membershipId: leaf.membershipId },
-    });
-    await tx.ban.create({
-      data: {
-        roomId: input.roomId,
-        joinNullifier: membership.joinNullifier,
-        rateCommitment,
-        reason: BanReason.RATE_LIMIT_COLLISION,
-        shamirSecret: secret.toString(),
-      },
-    });
-    return {
-      banned: true as const,
-      joinNullifier: membership.joinNullifier,
-      prunedLeaves: pruned.count,
-    };
-  });
+  return prisma.$transaction(async (tx) =>
+    banMembershipByLeaf(tx, {
+      roomId: input.roomId,
+      rateCommitment,
+      reason: BanReason.RATE_LIMIT_COLLISION,
+      shamirSecret: secret.toString(),
+    }),
+  );
 }

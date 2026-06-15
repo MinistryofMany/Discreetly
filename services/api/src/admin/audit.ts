@@ -1,9 +1,20 @@
 import { prisma } from '@discreetly/db';
 import type { Prisma } from '@discreetly/db';
 
+/** Audit action verbs. Every producer must pass one of these literals. */
+export type AuditAction =
+  | 'ROOM_CREATE'
+  | 'ROOM_UPDATE'
+  | 'ROOM_DELETE'
+  | 'ADMIN_BAN_IC'
+  | 'ADMIN_BAN_NULLIFIER'
+  | 'ADMIN_UNBAN'
+  | 'RATE_LIMIT_COLLISION'
+  | 'SYSTEM_BROADCAST';
+
 export interface AuditEntry {
   actor: string;
-  action: string;
+  action: AuditAction;
   target?: string;
   metadata?: Prisma.InputJsonValue;
 }
