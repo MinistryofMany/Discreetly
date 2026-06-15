@@ -24,7 +24,7 @@ function badgeTypeToCredType(type: string): string {
     .split('-')
     .map((p) => p[0]!.toUpperCase() + p.slice(1))
     .join('');
-  return `Tessera${pascal}Credential`;
+  return `Minister${pascal}Credential`;
 }
 
 async function signVc(userId: string, badge: MockBadge): Promise<string> {
@@ -54,8 +54,8 @@ export async function signIdToken(opts: {
   nonce?: string;
 }): Promise<string> {
   const userId = opts.userId ?? 'mockuser';
-  const tessera_badges = await Promise.all((opts.badges ?? []).map((b) => signVc(userId, b)));
-  return new SignJWT({ nonce: opts.nonce ?? 'n', tessera_badges })
+  const minister_badges = await Promise.all((opts.badges ?? []).map((b) => signVc(userId, b)));
+  return new SignJWT({ nonce: opts.nonce ?? 'n', minister_badges })
     .setProtectedHeader({ alg: 'EdDSA', kid: KID, typ: 'JWT' })
     .setIssuer(opts.issuer ?? MOCK_ISSUER)
     .setSubject(opts.sub)
