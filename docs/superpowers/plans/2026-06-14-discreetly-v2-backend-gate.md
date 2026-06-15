@@ -12,13 +12,13 @@
 
 ## Proven Minister facts (verified live; all env-configurable)
 
-| Thing | Current value (dev) | Env var |
-|---|---|---|
-| OIDC issuer (`iss` of id_token) | `http://localhost:3000` | `MINISTER_ISSUER` |
-| JWKS URL | `http://localhost:3000/.well-known/jwks.json` | `MINISTER_JWKS_URL` |
-| VC issuer (`iss` of each VC) | `did:web:tessera.local` | `MINISTER_VC_ISSUER` |
-| Our OIDC client_id (id_token `aud`) | `discreetly_dev` | `MINISTER_CLIENT_ID` |
-| Signing alg | EdDSA (Ed25519) | — |
+| Thing                               | Current value (dev)                           | Env var              |
+| ----------------------------------- | --------------------------------------------- | -------------------- |
+| OIDC issuer (`iss` of id_token)     | `http://localhost:3000`                       | `MINISTER_ISSUER`    |
+| JWKS URL                            | `http://localhost:3000/.well-known/jwks.json` | `MINISTER_JWKS_URL`  |
+| VC issuer (`iss` of each VC)        | `did:web:tessera.local`                       | `MINISTER_VC_ISSUER` |
+| Our OIDC client_id (id_token `aud`) | `discreetly_dev`                              | `MINISTER_CLIENT_ID` |
+| Signing alg                         | EdDSA (Ed25519)                               | —                    |
 
 - **id_token claims:** `iss`, `sub` (pairwise, base64url string), `aud`, `iat`, `exp`, `nonce`, optional `name`/`picture`, `tessera_badges` (array of VC JWT strings).
 - **Each badge VC (JWT):** header `{alg:"EdDSA", kid:"did:web:tessera.local#key-1", typ:"vc+jwt"}`; payload `{iss:"did:web:tessera.local", sub:"did:web:tessera.local:users:<id>", iat, exp, jti, vc:{ "@context":[…], type:["VerifiableCredential","Tessera<Pascal>Credential"], credentialSubject:{ id, …attrs } }}`.
@@ -138,11 +138,15 @@ Add to `packages/shared/package.json` `exports` so consumers can locate it:
     "noEmit": true,
     "types": ["node"],
     "paths": {
-      "@semaphore-protocol/group": ["./node_modules/@semaphore-protocol/group/dist/types/index.d.ts"],
-      "@semaphore-protocol/identity": ["./node_modules/@semaphore-protocol/identity/dist/types/index.d.ts"]
-    }
+      "@semaphore-protocol/group": [
+        "./node_modules/@semaphore-protocol/group/dist/types/index.d.ts",
+      ],
+      "@semaphore-protocol/identity": [
+        "./node_modules/@semaphore-protocol/identity/dist/types/index.d.ts",
+      ],
+    },
   },
-  "include": ["src", "../shared/src/types/external-shims.d.ts"]
+  "include": ["src", "../shared/src/types/external-shims.d.ts"],
 }
 ```
 
@@ -166,16 +170,16 @@ git commit -m "Add computeRoot and shared ambient shims for crypto consumers"
 - [ ] **Step 1: Add a `rateCommitment` ban index** (the message/ban path queries bans; join queries by `joinNullifier` which is already indexed). In `schema.prisma`, change the `Ban` model's index block to:
 
 ```prisma
-  @@index([roomId, joinNullifier])
-  @@index([roomId, rateCommitment])
+@@index([roomId, joinNullifier])
+@@index([roomId, rateCommitment])
 ```
 
 - [ ] **Step 2: Add audit-query indexes** to `AuditLog`:
 
 ```prisma
-  @@index([createdAt])
-  @@index([actor])
-  @@index([action])
+@@index([createdAt])
+@@index([actor])
+@@index([action])
 ```
 
 - [ ] **Step 3: Create the migration** (Postgres + Redis are running on 5432/6379; `.env` has `DATABASE_URL`):
@@ -310,7 +314,9 @@ describe('loadConfig', () => {
     expect(c.MINISTER_CLIENT_ID).toBe('discreetly_dev');
   });
   it('rejects a missing issuer', () => {
-    expect(() => loadConfig({ DATABASE_URL: 'postgresql://u:p@h:5432/d' } as NodeJS.ProcessEnv)).toThrow();
+    expect(() =>
+      loadConfig({ DATABASE_URL: 'postgresql://u:p@h:5432/d' } as NodeJS.ProcessEnv),
+    ).toThrow();
   });
 });
 ```
@@ -336,10 +342,18 @@ import { credentialTypeToBadgeType } from './badge-type.js';
 
 describe('credentialTypeToBadgeType', () => {
   it('maps Tessera credential types to policy badge types', () => {
-    expect(credentialTypeToBadgeType(['VerifiableCredential', 'TesseraEmailDomainCredential'])).toBe('email-domain');
-    expect(credentialTypeToBadgeType(['VerifiableCredential', 'TesseraOauthAccountCredential'])).toBe('oauth-account');
-    expect(credentialTypeToBadgeType(['VerifiableCredential', 'TesseraInviteCodeCredential'])).toBe('invite-code');
-    expect(credentialTypeToBadgeType(['VerifiableCredential', 'TesseraAgeOver21Credential'])).toBe('age-over-21');
+    expect(
+      credentialTypeToBadgeType(['VerifiableCredential', 'TesseraEmailDomainCredential']),
+    ).toBe('email-domain');
+    expect(
+      credentialTypeToBadgeType(['VerifiableCredential', 'TesseraOauthAccountCredential']),
+    ).toBe('oauth-account');
+    expect(credentialTypeToBadgeType(['VerifiableCredential', 'TesseraInviteCodeCredential'])).toBe(
+      'invite-code',
+    );
+    expect(credentialTypeToBadgeType(['VerifiableCredential', 'TesseraAgeOver21Credential'])).toBe(
+      'age-over-21',
+    );
   });
   it('returns null for unrecognized shapes', () => {
     expect(credentialTypeToBadgeType(['VerifiableCredential'])).toBeNull();
@@ -406,7 +420,10 @@ export interface MockBadge {
 }
 
 function badgeTypeToCredType(type: string): string {
-  const pascal = type.split('-').map((p) => p[0]!.toUpperCase() + p.slice(1)).join('');
+  const pascal = type
+    .split('-')
+    .map((p) => p[0]!.toUpperCase() + p.slice(1))
+    .join('');
   return `Tessera${pascal}Credential`;
 }
 
@@ -454,7 +471,13 @@ export async function signIdToken(opts: {
 import { describe, it, expect } from 'vitest';
 import { createLocalJWKSet } from 'jose';
 import { makeVerifier } from './verify.js';
-import { jwks, signIdToken, MOCK_ISSUER, MOCK_VC_ISSUER, MOCK_CLIENT_ID } from '../test/mock-issuer.js';
+import {
+  jwks,
+  signIdToken,
+  MOCK_ISSUER,
+  MOCK_VC_ISSUER,
+  MOCK_CLIENT_ID,
+} from '../test/mock-issuer.js';
 
 const verify = makeVerifier({
   issuer: MOCK_ISSUER,
@@ -491,10 +514,15 @@ describe('verifyMinisterIdToken (mock issuer)', () => {
     // hand-craft is unnecessary: a VC always uses MOCK_VC_ISSUER here, so
     // instead point the verifier at a different expected vcIssuer.
     const v = makeVerifier({
-      issuer: MOCK_ISSUER, audience: MOCK_CLIENT_ID, vcIssuer: 'did:web:other',
+      issuer: MOCK_ISSUER,
+      audience: MOCK_CLIENT_ID,
+      vcIssuer: 'did:web:other',
       jwks: createLocalJWKSet(await jwks()),
     });
-    const idToken = await signIdToken({ sub: 's', badges: [{ type: 'email-domain', attributes: { domain: 'a.com' } }] });
+    const idToken = await signIdToken({
+      sub: 's',
+      badges: [{ type: 'email-domain', attributes: { domain: 'a.com' } }],
+    });
     await expect(v(idToken)).rejects.toThrow();
   });
 
@@ -604,7 +632,8 @@ export async function getRealMinisterIdToken(): Promise<string | null> {
   }
   try {
     const user = (await client.query('select id from "User" limit 1')).rows[0];
-    const badge = (await client.query(`select id from "Badge" where type='email-domain' limit 1`)).rows[0];
+    const badge = (await client.query(`select id from "Badge" where type='email-domain' limit 1`))
+      .rows[0];
     if (!user || !badge) return null;
 
     const verifier = b64url(randomBytes(32));
@@ -615,7 +644,15 @@ export async function getRealMinisterIdToken(): Promise<string | null> {
       `insert into "OidcAuthorizationCode"
        (code,"clientId","userId","redirectUri",scopes,"approvedBadgeIds",nonce,"codeChallenge","codeChallengeMethod","expiresAt")
        values ($1,'discreetly_dev',$2,$3,$4,$5,$6,$7,'S256', now() + interval '60 seconds')`,
-      [code, user.id, REDIRECT, ['openid', 'profile', 'badge:email-domain'], [badge.id], nonce, challenge],
+      [
+        code,
+        user.id,
+        REDIRECT,
+        ['openid', 'profile', 'badge:email-domain'],
+        [badge.id],
+        nonce,
+        challenge,
+      ],
     );
 
     const res = await fetch('http://localhost:3000/oidc/token', {
@@ -682,7 +719,9 @@ import { joinNullifier } from './join-nullifier.js';
 
 describe('joinNullifier', () => {
   it('is deterministic per (sub, room) and field-bounded', () => {
-    const FIELD = BigInt('21888242871839275222246405745257275088548364400416034343698204186575808495617');
+    const FIELD = BigInt(
+      '21888242871839275222246405745257275088548364400416034343698204186575808495617',
+    );
     const a = joinNullifier('sub-abc', 700n);
     expect(joinNullifier('sub-abc', 700n)).toBe(a);
     expect(a).toBeLessThan(FIELD);
@@ -699,7 +738,9 @@ describe('joinNullifier', () => {
 ```ts
 import { poseidon2 } from 'poseidon-lite';
 
-const FIELD = BigInt('21888242871839275222246405745257275088548364400416034343698204186575808495617');
+const FIELD = BigInt(
+  '21888242871839275222246405745257275088548364400416034343698204186575808495617',
+);
 
 /** Reduce an arbitrary string (e.g. the pairwise sub) to a field element. */
 function toField(s: string): bigint {
@@ -726,29 +767,60 @@ import { describe, it, expect } from 'vitest';
 import { createLocalJWKSet } from 'jose';
 import { makeVerifier } from '../minister/verify.js';
 import { evaluateGate } from './gate.js';
-import { jwks, signIdToken, MOCK_ISSUER, MOCK_VC_ISSUER, MOCK_CLIENT_ID } from '../test/mock-issuer.js';
+import {
+  jwks,
+  signIdToken,
+  MOCK_ISSUER,
+  MOCK_VC_ISSUER,
+  MOCK_CLIENT_ID,
+} from '../test/mock-issuer.js';
 import type { PolicyNode } from '@discreetly/policy';
 
-const verify = makeVerifier({ issuer: MOCK_ISSUER, audience: MOCK_CLIENT_ID, vcIssuer: MOCK_VC_ISSUER, jwks: createLocalJWKSet(await jwks()) });
-const policy: PolicyNode = { allOf: [
-  { badge: { type: 'email-domain', where: { domain: 'acme.com' } } },
-  { badge: { type: 'invite-code' } },
-]};
+const verify = makeVerifier({
+  issuer: MOCK_ISSUER,
+  audience: MOCK_CLIENT_ID,
+  vcIssuer: MOCK_VC_ISSUER,
+  jwks: createLocalJWKSet(await jwks()),
+});
+const policy: PolicyNode = {
+  allOf: [
+    { badge: { type: 'email-domain', where: { domain: 'acme.com' } } },
+    { badge: { type: 'invite-code' } },
+  ],
+};
 
 describe('evaluateGate', () => {
   it('passes when badges satisfy the policy and returns the join nullifier', async () => {
-    const idToken = await signIdToken({ sub: 'sub-1', badges: [
-      { type: 'email-domain', attributes: { domain: 'acme.com' } },
-      { type: 'invite-code', attributes: { label: 'x' } },
-    ]});
-    const res = await evaluateGate({ idToken, rlnIdentifier: 700n, policy, verify, now: 1_750_000_000 });
+    const idToken = await signIdToken({
+      sub: 'sub-1',
+      badges: [
+        { type: 'email-domain', attributes: { domain: 'acme.com' } },
+        { type: 'invite-code', attributes: { label: 'x' } },
+      ],
+    });
+    const res = await evaluateGate({
+      idToken,
+      rlnIdentifier: 700n,
+      policy,
+      verify,
+      now: 1_750_000_000,
+    });
     expect(res.allowed).toBe(true);
     expect(res.joinNullifier).toBeTypeOf('bigint');
     expect(res.sub).toBe('sub-1');
   });
   it('denies when a required badge is missing', async () => {
-    const idToken = await signIdToken({ sub: 'sub-2', badges: [{ type: 'email-domain', attributes: { domain: 'acme.com' } }] });
-    const res = await evaluateGate({ idToken, rlnIdentifier: 700n, policy, verify, now: 1_750_000_000 });
+    const idToken = await signIdToken({
+      sub: 'sub-2',
+      badges: [{ type: 'email-domain', attributes: { domain: 'acme.com' } }],
+    });
+    const res = await evaluateGate({
+      idToken,
+      rlnIdentifier: 700n,
+      policy,
+      verify,
+      now: 1_750_000_000,
+    });
     expect(res.allowed).toBe(false);
   });
 });
@@ -827,7 +899,8 @@ export async function joinRoom(args: JoinArgs): Promise<JoinResult> {
       create: { roomId: args.room.id, joinNullifier: args.joinNullifier },
       update: {},
     });
-    if (membership.status === MembershipStatus.BANNED) return { ok: false, reason: 'banned' as const };
+    if (membership.status === MembershipStatus.BANNED)
+      return { ok: false, reason: 'banned' as const };
 
     const existing = await tx.membershipLeaf.findUnique({
       where: { roomId_rateCommitment: { roomId: args.room.id, rateCommitment } },
@@ -872,12 +945,14 @@ export async function rotateDevice(args: RotateArgs): Promise<RotateResult> {
       where: { roomId_joinNullifier: { roomId: args.room.id, joinNullifier: args.joinNullifier } },
     });
     if (!membership) return { ok: false, reason: 'no-membership' as const };
-    if (membership.status === MembershipStatus.BANNED) return { ok: false, reason: 'banned' as const };
+    if (membership.status === MembershipStatus.BANNED)
+      return { ok: false, reason: 'banned' as const };
 
     const old = await tx.membershipLeaf.findUnique({
       where: { roomId_rateCommitment: { roomId: args.room.id, rateCommitment: oldRc } },
     });
-    if (!old || old.membershipId !== membership.id) return { ok: false, reason: 'old-leaf-not-found' as const };
+    if (!old || old.membershipId !== membership.id)
+      return { ok: false, reason: 'old-leaf-not-found' as const };
 
     await tx.membershipLeaf.update({
       where: { id: old.id },
@@ -902,12 +977,21 @@ let room: { id: string; rlnIdentifier: string; userMessageLimit: number; maxDevi
 beforeAll(async () => {
   const r = await prisma.room.create({
     data: {
-      name: 'Mem Test', slug: `mem-${Date.now()}`, rlnIdentifier: `rln-${Date.now()}`,
-      rateLimit: 10_000, userMessageLimit: 5, maxDevices: 2,
+      name: 'Mem Test',
+      slug: `mem-${Date.now()}`,
+      rlnIdentifier: `rln-${Date.now()}`,
+      rateLimit: 10_000,
+      userMessageLimit: 5,
+      maxDevices: 2,
       accessPolicy: { badge: { type: 'email-domain' } },
     },
   });
-  room = { id: r.id, rlnIdentifier: r.rlnIdentifier, userMessageLimit: r.userMessageLimit, maxDevices: r.maxDevices };
+  room = {
+    id: r.id,
+    rlnIdentifier: r.rlnIdentifier,
+    userMessageLimit: r.userMessageLimit,
+    maxDevices: r.maxDevices,
+  };
 });
 afterAll(async () => {
   await prisma.room.delete({ where: { id: room.id } });
@@ -917,9 +1001,19 @@ afterAll(async () => {
 describe('membership', () => {
   it('joins, adds a second device, then enforces the device limit', async () => {
     const n = 'jn-1';
-    const a = await joinRoom({ room, joinNullifier: n, identityCommitment: '111', deviceLabel: 'phone' });
+    const a = await joinRoom({
+      room,
+      joinNullifier: n,
+      identityCommitment: '111',
+      deviceLabel: 'phone',
+    });
     expect(a.ok).toBe(true);
-    const b = await joinRoom({ room, joinNullifier: n, identityCommitment: '222', deviceLabel: 'laptop' });
+    const b = await joinRoom({
+      room,
+      joinNullifier: n,
+      identityCommitment: '222',
+      deviceLabel: 'laptop',
+    });
     expect(b.ok).toBe(true);
     const c = await joinRoom({ room, joinNullifier: n, identityCommitment: '333' });
     expect(c).toMatchObject({ ok: false, reason: 'device-limit' });
@@ -934,9 +1028,16 @@ describe('membership', () => {
   it('rotates a device leaf to a new identity commitment', async () => {
     const n = 'jn-2';
     await joinRoom({ room, joinNullifier: n, identityCommitment: '444' });
-    const r = await rotateDevice({ room, joinNullifier: n, oldIdentityCommitment: '444', newIdentityCommitment: '555' });
+    const r = await rotateDevice({
+      room,
+      joinNullifier: n,
+      oldIdentityCommitment: '444',
+      newIdentityCommitment: '555',
+    });
     expect(r.ok).toBe(true);
-    const leaf = await prisma.membershipLeaf.findFirst({ where: { roomId: room.id, identityCommitment: '555' } });
+    const leaf = await prisma.membershipLeaf.findFirst({
+      where: { roomId: room.id, identityCommitment: '555' },
+    });
     expect(leaf).toBeTruthy();
   });
 
@@ -992,7 +1093,10 @@ export const roomRouter = router({
     return prisma.room.findUnique({ where: { id: input.id } });
   }),
   listPublic: publicProcedure.query(async () => {
-    return prisma.room.findMany({ where: { visibility: 'PUBLIC' }, orderBy: { createdAt: 'desc' } });
+    return prisma.room.findMany({
+      where: { visibility: 'PUBLIC' },
+      orderBy: { createdAt: 'desc' },
+    });
   }),
   // The current Merkle leaves a client needs to build an RLN proof.
   leaves: publicProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
@@ -1018,7 +1122,14 @@ import { joinRoom, rotateDevice } from '../membership/membership.js';
 
 export const membershipRouter = router({
   join: publicProcedure
-    .input(z.object({ roomId: z.string(), idToken: z.string(), identityCommitment: z.string(), deviceLabel: z.string().optional() }))
+    .input(
+      z.object({
+        roomId: z.string(),
+        idToken: z.string(),
+        identityCommitment: z.string(),
+        deviceLabel: z.string().optional(),
+      }),
+    )
     .mutation(async ({ input }) => {
       const room = await prisma.room.findUnique({ where: { id: input.roomId } });
       if (!room) return { ok: false as const, reason: 'no-room' as const };
@@ -1037,7 +1148,14 @@ export const membershipRouter = router({
       });
     }),
   rotate: publicProcedure
-    .input(z.object({ roomId: z.string(), idToken: z.string(), oldIdentityCommitment: z.string(), newIdentityCommitment: z.string() }))
+    .input(
+      z.object({
+        roomId: z.string(),
+        idToken: z.string(),
+        oldIdentityCommitment: z.string(),
+        newIdentityCommitment: z.string(),
+      }),
+    )
     .mutation(async ({ input }) => {
       const room = await prisma.room.findUnique({ where: { id: input.roomId } });
       if (!room) return { ok: false as const, reason: 'no-room' as const };
@@ -1087,7 +1205,11 @@ const server = createHTTPServer({
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', 'content-type');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-    if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
     next();
   },
   createContext: () => ({}),
@@ -1106,18 +1228,32 @@ import { createLocalJWKSet } from 'jose';
 import { appRouter } from './app.router.js';
 import { makeVerifier } from '../minister/verify.js';
 import * as verifyModule from '../minister/verify.js';
-import { jwks, signIdToken, MOCK_ISSUER, MOCK_VC_ISSUER, MOCK_CLIENT_ID } from '../test/mock-issuer.js';
+import {
+  jwks,
+  signIdToken,
+  MOCK_ISSUER,
+  MOCK_VC_ISSUER,
+  MOCK_CLIENT_ID,
+} from '../test/mock-issuer.js';
 
 let roomId: string;
 
 beforeAll(async () => {
   // Point the production verifier used by the router at the mock JWKS.
-  const mock = makeVerifier({ issuer: MOCK_ISSUER, audience: MOCK_CLIENT_ID, vcIssuer: MOCK_VC_ISSUER, jwks: createLocalJWKSet(await jwks()) });
+  const mock = makeVerifier({
+    issuer: MOCK_ISSUER,
+    audience: MOCK_CLIENT_ID,
+    vcIssuer: MOCK_VC_ISSUER,
+    jwks: createLocalJWKSet(await jwks()),
+  });
   vi.spyOn(verifyModule, 'verifyMinisterIdToken').mockImplementation(mock);
   const r = await prisma.room.create({
     data: {
-      name: 'Router Test', slug: `rt-${Date.now()}`, rlnIdentifier: `rln-rt-${Date.now()}`,
-      rateLimit: 10_000, userMessageLimit: 5,
+      name: 'Router Test',
+      slug: `rt-${Date.now()}`,
+      rlnIdentifier: `rln-rt-${Date.now()}`,
+      rateLimit: 10_000,
+      userMessageLimit: 5,
       accessPolicy: { badge: { type: 'email-domain', where: { domain: 'acme.com' } } },
     },
   });
@@ -1132,8 +1268,16 @@ afterAll(async () => {
 describe('membership.join via tRPC', () => {
   it('admits a user whose badge satisfies the room policy', async () => {
     const caller = appRouter.createCaller({});
-    const idToken = await signIdToken({ sub: 'router-sub', badges: [{ type: 'email-domain', attributes: { domain: 'acme.com' } }] });
-    const res = await caller.membership.join({ roomId, idToken, identityCommitment: '12345', deviceLabel: 'phone' });
+    const idToken = await signIdToken({
+      sub: 'router-sub',
+      badges: [{ type: 'email-domain', attributes: { domain: 'acme.com' } }],
+    });
+    const res = await caller.membership.join({
+      roomId,
+      idToken,
+      identityCommitment: '12345',
+      deviceLabel: 'phone',
+    });
     expect(res.ok).toBe(true);
     const leaves = await caller.room.leaves({ id: roomId });
     expect(leaves.length).toBe(1);
@@ -1141,7 +1285,10 @@ describe('membership.join via tRPC', () => {
 
   it('rejects a user missing the required badge', async () => {
     const caller = appRouter.createCaller({});
-    const idToken = await signIdToken({ sub: 'router-sub-2', badges: [{ type: 'invite-code', attributes: { label: 'x' } }] });
+    const idToken = await signIdToken({
+      sub: 'router-sub-2',
+      badges: [{ type: 'invite-code', attributes: { label: 'x' } }],
+    });
     const res = await caller.membership.join({ roomId, idToken, identityCommitment: '999' });
     expect(res).toMatchObject({ ok: false, reason: 'policy-denied' });
   });
@@ -1177,4 +1324,7 @@ git commit -m "Add tRPC room + membership routers and standalone server"
 - **Deferred to 3b:** message pipeline (RLN verify → collision → ban), Redis pub/sub, WebSocket subscriptions, the epoch-binding hardening, IDC (only if needed). `verifyRLNProof` callers must `try/catch` (it can throw) — apply in 3b's message handler.
 - **Deferred to 3c:** admin tRPC (room CRUD, policy authoring, ban-by-IC/nullifier, audit).
 - **Deferred to Plan 4:** Auth.js OIDC client (the browser dance), frontend, admin UI, full Playwright e2e against live Minister.
+
+```
+
 ```

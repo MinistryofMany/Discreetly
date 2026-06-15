@@ -3,7 +3,9 @@ import { joinNullifier } from './join-nullifier.js';
 
 describe('joinNullifier', () => {
   it('is deterministic per (sub, room) and field-bounded', () => {
-    const FIELD = BigInt('21888242871839275222246405745257275088548364400416034343698204186575808495617');
+    const FIELD = BigInt(
+      '21888242871839275222246405745257275088548364400416034343698204186575808495617',
+    );
     const a = joinNullifier('sub-abc', 700n);
     expect(joinNullifier('sub-abc', 700n)).toBe(a);
     expect(a).toBeLessThan(FIELD);

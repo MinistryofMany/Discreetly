@@ -1,6 +1,8 @@
 import { poseidon2 } from 'poseidon-lite';
 
-const FIELD = BigInt('21888242871839275222246405745257275088548364400416034343698204186575808495617');
+const FIELD = BigInt(
+  '21888242871839275222246405745257275088548364400416034343698204186575808495617',
+);
 
 /** Reduce an arbitrary string (e.g. the pairwise sub) to a field element. */
 function toField(s: string): bigint {

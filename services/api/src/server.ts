@@ -24,7 +24,11 @@ const httpServer = createHTTPServer({
 });
 
 const wss = new WebSocketServer({ server: httpServer });
-applyWSSHandler({ wss, router: appRouter, createContext: () => ({ verify: getProductionVerifier() }) });
+applyWSSHandler({
+  wss,
+  router: appRouter,
+  createContext: () => ({ verify: getProductionVerifier() }),
+});
 
 httpServer.listen(API_PORT);
 console.log(`[discreetly:api] tRPC on http://localhost:${API_PORT}`);

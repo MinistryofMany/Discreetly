@@ -9,13 +9,11 @@ export const roomRouter = router({
   listPublic: publicProcedure.query(async () =>
     prisma.room.findMany({ where: { visibility: 'PUBLIC' }, orderBy: { createdAt: 'desc' } }),
   ),
-  leaves: publicProcedure
-    .input(z.object({ id: z.string() }))
-    .query(async ({ input }) => {
-      const leaves = await prisma.membershipLeaf.findMany({
-        where: { roomId: input.id, revokedAt: null },
-        select: { rateCommitment: true },
-      });
-      return leaves.map((l) => l.rateCommitment);
-    }),
+  leaves: publicProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
+    const leaves = await prisma.membershipLeaf.findMany({
+      where: { roomId: input.id, revokedAt: null },
+      select: { rateCommitment: true },
+    });
+    return leaves.map((l) => l.rateCommitment);
+  }),
 });
