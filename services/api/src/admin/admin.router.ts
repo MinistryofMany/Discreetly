@@ -1,12 +1,16 @@
 import { z } from 'zod';
-import { prisma, type Prisma } from '@discreetly/db';
+import { prisma, Prisma } from '@discreetly/db';
 import { TRPCError } from '@trpc/server';
 import { router, adminProcedure } from '../trpc/trpc.js';
 import { banByIdentityCommitment, banByJoinNullifier, unban } from './ban-admin.js';
-import { generateRlnIdentifier, hashRoomPassword } from './room-admin.js';
+import {
+  generateRlnIdentifier,
+  hashRoomPassword,
+  policyToJson,
+  validatePolicyInput,
+} from './room-crypto.js';
 import { audit } from './audit.js';
 import { PUBLIC_ROOM_FIELDS } from '../trpc/room-fields.js';
-import { policyNodeSchema } from '@discreetly/policy';
 import { publishSystem } from '../realtime/broadcast.js';
 
 const roomAdminRouter = router({
@@ -27,14 +31,7 @@ const roomAdminRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      // Validate accessPolicy
-      const parsedPolicy = (() => {
-        try {
-          return policyNodeSchema.parse(input.accessPolicy);
-        } catch {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'invalid accessPolicy' });
-        }
-      })();
+      const parsedPolicy = validatePolicyInput(input.accessPolicy);
 
       // AES rooms require a password
       if (input.encryption === 'AES' && !input.password) {
@@ -43,7 +40,8 @@ const roomAdminRouter = router({
 
       const passwordHash = input.password ? await hashRoomPassword(input.password) : undefined;
 
-      // Generate rlnIdentifier with retry on unique collision (P2002)
+      // Generate rlnIdentifier with retry on unique collision (P2002 on rlnIdentifier
+      // only). A slug collision is a client error, not retryable.
       let room;
       for (let attempt = 0; attempt < 5; attempt++) {
         const rlnIdentifier = generateRlnIdentifier(input.name);
@@ -61,18 +59,21 @@ const roomAdminRouter = router({
               ...(input.persistence !== undefined && { persistence: input.persistence }),
               ...(input.encryption !== undefined && { encryption: input.encryption }),
               ...(passwordHash !== undefined && { passwordHash }),
-              accessPolicy: parsedPolicy as unknown as Prisma.InputJsonValue,
+              accessPolicy: policyToJson(parsedPolicy),
             },
             select: PUBLIC_ROOM_FIELDS,
           });
           break;
         } catch (err: unknown) {
-          const isPrismaError =
-            typeof err === 'object' &&
-            err !== null &&
-            'code' in err &&
-            (err as { code: string }).code === 'P2002';
-          if (isPrismaError && attempt < 4) continue;
+          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+            const target = err.meta?.target;
+            const fields = Array.isArray(target) ? target : target ? [String(target)] : [];
+            if (fields.includes('slug')) {
+              throw new TRPCError({ code: 'BAD_REQUEST', message: 'slug already in use' });
+            }
+            // rlnIdentifier collision: retry with a fresh identifier.
+            if (attempt < 4) continue;
+          }
           throw err;
         }
       }
@@ -84,6 +85,8 @@ const roomAdminRouter = router({
         });
       }
 
+      // Best-effort audit (outside the create transaction); the transactional
+      // ban audits are the durable record. A failed audit here does not roll back.
       await audit({ actor: ctx.adminSub, action: 'ROOM_CREATE', target: room.id });
       return room;
     }),
@@ -106,18 +109,34 @@ const roomAdminRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      const existing = await prisma.room.findUnique({ where: { id: input.id }, select: { id: true } });
+      const existing = await prisma.room.findUnique({
+        where: { id: input.id },
+        select: { id: true, userMessageLimit: true },
+      });
       if (!existing) throw new TRPCError({ code: 'NOT_FOUND', message: 'room not found' });
 
-      // Re-validate accessPolicy if present
-      let parsedPolicy: Prisma.InputJsonValue | undefined;
-      if (input.accessPolicy !== undefined) {
-        try {
-          parsedPolicy = policyNodeSchema.parse(input.accessPolicy) as unknown as Prisma.InputJsonValue;
-        } catch {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'invalid accessPolicy' });
+      // Changing userMessageLimit invalidates every stored rateCommitment (it is
+      // hashed with the limit), which would break the tree and ban-by-IC matching
+      // for every existing member. Only allow it on an empty room.
+      if (
+        input.userMessageLimit !== undefined &&
+        input.userMessageLimit !== existing.userMessageLimit
+      ) {
+        const member = await prisma.membership.findFirst({
+          where: { roomId: input.id },
+          select: { id: true },
+        });
+        if (member) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'cannot change userMessageLimit on a room with members',
+          });
         }
       }
+
+      // Re-validate accessPolicy if present
+      const parsedPolicy =
+        input.accessPolicy !== undefined ? validatePolicyInput(input.accessPolicy) : undefined;
 
       const passwordHash = input.password ? await hashRoomPassword(input.password) : undefined;
 
@@ -134,7 +153,7 @@ const roomAdminRouter = router({
           ...(input.persistence !== undefined && { persistence: input.persistence }),
           ...(input.encryption !== undefined && { encryption: input.encryption }),
           ...(passwordHash !== undefined && { passwordHash }),
-          ...(parsedPolicy !== undefined && { accessPolicy: parsedPolicy }),
+          ...(parsedPolicy !== undefined && { accessPolicy: policyToJson(parsedPolicy) }),
           // rlnIdentifier is intentionally excluded — never updated
         },
         select: PUBLIC_ROOM_FIELDS,
@@ -144,16 +163,17 @@ const roomAdminRouter = router({
       return room;
     }),
 
-  delete: adminProcedure
-    .input(z.object({ id: z.string() }))
-    .mutation(async ({ input, ctx }) => {
-      const existing = await prisma.room.findUnique({ where: { id: input.id }, select: { id: true } });
-      if (!existing) throw new TRPCError({ code: 'NOT_FOUND', message: 'room not found' });
+  delete: adminProcedure.input(z.object({ id: z.string() })).mutation(async ({ input, ctx }) => {
+    const existing = await prisma.room.findUnique({
+      where: { id: input.id },
+      select: { id: true },
+    });
+    if (!existing) throw new TRPCError({ code: 'NOT_FOUND', message: 'room not found' });
 
-      await prisma.room.delete({ where: { id: input.id } });
-      await audit({ actor: ctx.adminSub, action: 'ROOM_DELETE', target: input.id });
-      return { ok: true as const };
-    }),
+    await prisma.room.delete({ where: { id: input.id } });
+    await audit({ actor: ctx.adminSub, action: 'ROOM_DELETE', target: input.id });
+    return { ok: true as const };
+  }),
 
   list: adminProcedure.query(async () =>
     prisma.room.findMany({
@@ -165,39 +185,41 @@ const roomAdminRouter = router({
     }),
   ),
 
-  get: adminProcedure
-    .input(z.object({ id: z.string() }))
-    .query(async ({ input }) => {
-      const room = await prisma.room.findUnique({ where: { id: input.id }, select: PUBLIC_ROOM_FIELDS });
-      if (!room) throw new TRPCError({ code: 'NOT_FOUND', message: 'room not found' });
-      return room;
-    }),
+  get: adminProcedure.input(z.object({ id: z.string() })).query(async ({ input }) => {
+    const room = await prisma.room.findUnique({
+      where: { id: input.id },
+      select: PUBLIC_ROOM_FIELDS,
+    });
+    if (!room) throw new TRPCError({ code: 'NOT_FOUND', message: 'room not found' });
+    return room;
+  }),
 
-  memberships: adminProcedure
-    .input(z.object({ roomId: z.string() }))
-    .query(async ({ input }) => {
-      const room = await prisma.room.findUnique({ where: { id: input.roomId }, select: { id: true } });
-      if (!room) throw new TRPCError({ code: 'NOT_FOUND', message: 'room not found' });
+  memberships: adminProcedure.input(z.object({ roomId: z.string() })).query(async ({ input }) => {
+    const room = await prisma.room.findUnique({
+      where: { id: input.roomId },
+      select: { id: true },
+    });
+    if (!room) throw new TRPCError({ code: 'NOT_FOUND', message: 'room not found' });
 
-      return prisma.membership.findMany({
-        where: { roomId: input.roomId },
-        select: {
-          status: true,
-          joinNullifier: true,
-          createdAt: true,
-          leaves: {
-            where: { revokedAt: null },
-            select: {
-              identityCommitment: true,
-              rateCommitment: true,
-              deviceLabel: true,
-              createdAt: true,
-            },
+    return prisma.membership.findMany({
+      where: { roomId: input.roomId },
+      select: {
+        status: true,
+        joinNullifier: true,
+        createdAt: true,
+        leaves: {
+          where: { revokedAt: null },
+          select: {
+            identityCommitment: true,
+            rateCommitment: true,
+            deviceLabel: true,
+            createdAt: true,
           },
         },
-        orderBy: { createdAt: 'asc' },
-      });
-    }),
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+  }),
 });
 
 export const adminRouter = router({
@@ -262,17 +284,22 @@ export const adminRouter = router({
   broadcast: adminProcedure
     .input(z.object({ roomId: z.string(), text: z.string().min(1) }))
     .mutation(async ({ input, ctx }) => {
-      const room = await prisma.room.findUnique({ where: { id: input.roomId }, select: { id: true } });
+      const room = await prisma.room.findUnique({
+        where: { id: input.roomId },
+        select: { id: true },
+      });
       if (!room) throw new TRPCError({ code: 'NOT_FOUND', message: 'room not found' });
 
       const createdAt = new Date().toISOString();
-      await publishSystem(input.roomId, input.text, createdAt);
+      // Audit before publishing: a publish failure after a logged broadcast is
+      // safer than an unlogged broadcast.
       await audit({
         actor: ctx.adminSub,
         action: 'SYSTEM_BROADCAST',
         target: input.roomId,
         metadata: { text: input.text },
       });
+      await publishSystem(input.roomId, input.text, createdAt);
 
       return { ok: true as const };
     }),
