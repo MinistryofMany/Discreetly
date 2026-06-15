@@ -1,0 +1,30 @@
+# Dependencies (reinstalled inside the image)
+node_modules
+**/node_modules
+
+# Build outputs
+.next
+**/.next
+.turbo
+**/.turbo
+dist
+**/dist
+**/*.tsbuildinfo
+
+# VCS / worktrees
+.git
+.worktrees
+
+# Archived pre-monorepo trees
+_legacy
+
+# Test artifacts
+test-results
+**/test-results
+playwright-report
+**/playwright-report
+
+# Secrets / local env (never bake into an image)
+.env
+.env.*
+apps/web/.env.local

@@ -38,9 +38,17 @@ const securityHeaders = [
   { key: 'Content-Security-Policy', value: csp },
 ];
 
+// Monorepo root (apps/web -> ../..). Next standalone output traces the
+// workspace TS-source packages from here so the self-contained server.js bundles
+// every workspace dependency.
+const monorepoRoot = join(__dirname, '..', '..');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Emit a self-contained server (.next/standalone) for the Docker runner image.
+  output: 'standalone',
+  outputFileTracingRoot: monorepoRoot,
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },
