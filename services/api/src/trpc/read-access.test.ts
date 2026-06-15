@@ -99,4 +99,30 @@ describe('read access control', () => {
     expect(Array.isArray(leaves)).toBe(true);
     expect(leaves.length).toBeGreaterThanOrEqual(1);
   });
+
+  it('PUBLIC room: room.get works with no idToken and omits passwordHash', async () => {
+    const room = await caller.room.get({ id: publicRoomId });
+    expect(room?.id).toBe(publicRoomId);
+    expect(room).not.toHaveProperty('passwordHash');
+  });
+
+  it('PRIVATE room: room.get with no idToken → UNAUTHORIZED', async () => {
+    await expect(caller.room.get({ id: privateRoomId })).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+    });
+  });
+
+  it('PRIVATE room: room.get for an ACTIVE member returns the room (no passwordHash)', async () => {
+    const sub = 'get-member-sub';
+    const jn = joinNullifier(sub, BigInt(RLN_PRIVATE)).toString();
+    const room = await prisma.room.findUniqueOrThrow({
+      where: { id: privateRoomId },
+      select: { id: true, rlnIdentifier: true, userMessageLimit: true, maxDevices: true },
+    });
+    await joinRoom({ room, joinNullifier: jn, identityCommitment: '88888' });
+    const token = await signIdToken({ sub });
+    const got = await caller.room.get({ id: privateRoomId, idToken: token });
+    expect(got?.id).toBe(privateRoomId);
+    expect(got).not.toHaveProperty('passwordHash');
+  });
 });
