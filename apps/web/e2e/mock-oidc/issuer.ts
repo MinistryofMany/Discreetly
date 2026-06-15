@@ -76,9 +76,7 @@ export interface MintOpts {
 /** Mint an id_token directly (for non-browser checks). */
 export async function mintIdToken(opts: MintOpts): Promise<string> {
   const userId = opts.userId ?? opts.sub.replace(/[^a-zA-Z0-9]/g, '');
-  const minister_badges = await Promise.all(
-    (opts.badges ?? []).map((b) => signVc(userId, b)),
-  );
+  const minister_badges = await Promise.all((opts.badges ?? []).map((b) => signVc(userId, b)));
   const builder = new SignJWT({
     nonce: opts.nonce,
     ...(opts.name !== undefined && { name: opts.name }),
@@ -163,17 +161,11 @@ export async function startMockIssuer(port: number): Promise<MockIssuerHandle> {
   return {
     url: issuer,
     close: () =>
-      new Promise<void>((resolve, reject) =>
-        server.close((e) => (e ? reject(e) : resolve())),
-      ),
+      new Promise<void>((resolve, reject) => server.close((e) => (e ? reject(e) : resolve()))),
   };
 }
 
-async function handle(
-  req: IncomingMessage,
-  res: ServerResponse,
-  issuer: string,
-): Promise<void> {
+async function handle(req: IncomingMessage, res: ServerResponse, issuer: string): Promise<void> {
   const url = new URL(req.url ?? '/', issuer);
   const path = url.pathname;
 
@@ -236,7 +228,9 @@ function authorize(req: IncomingMessage, res: ServerResponse, url: URL): void {
 
   if (responseType !== 'code' || !redirectUri || !state || !codeChallenge) {
     res.writeHead(400, { 'content-type': 'text/plain' });
-    res.end('invalid authorize request (need response_type=code, redirect_uri, state, code_challenge)');
+    res.end(
+      'invalid authorize request (need response_type=code, redirect_uri, state, code_challenge)',
+    );
     return;
   }
   if (codeChallengeMethod !== 'S256') {
@@ -253,7 +247,10 @@ function authorize(req: IncomingMessage, res: ServerResponse, url: URL): void {
     const email = q.get('email') ?? 'user@example.com';
     const sub = q.get('sub') ?? subFor(email);
     const name = q.get('name') ?? email;
-    const badgeKeys = (q.get('badges') ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+    const badgeKeys = (q.get('badges') ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
     const badges = badgeKeys
       .map((k) => BADGE_CATALOG[k])
       .filter((b): b is MockBadge => b !== undefined);
@@ -262,10 +259,7 @@ function authorize(req: IncomingMessage, res: ServerResponse, url: URL): void {
 
   // Render the deterministic login + consent page.
   const checkboxes = Object.keys(BADGE_CATALOG)
-    .map(
-      (k) =>
-        `<label><input type="checkbox" name="badge" value="${k}" /> ${k}</label><br/>`,
-    )
+    .map((k) => `<label><input type="checkbox" name="badge" value="${k}" /> ${k}</label><br/>`)
     .join('');
   res.writeHead(200, { 'content-type': 'text/html' });
   res.end(
@@ -330,11 +324,7 @@ function finishLogin(
 // `authorize` renders a POST form to /oidc/approve; the dispatcher in `handle`
 // routes it to `approve` above.
 
-async function token(
-  req: IncomingMessage,
-  res: ServerResponse,
-  issuer: string,
-): Promise<void> {
+async function token(req: IncomingMessage, res: ServerResponse, issuer: string): Promise<void> {
   const body = await readBody(req);
   const form = new URLSearchParams(body);
   const grantType = form.get('grant_type');

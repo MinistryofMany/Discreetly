@@ -24,9 +24,7 @@ export async function prepareDatabase(): Promise<void> {
   const admin = new Client({ connectionString: PG_ADMIN_URL });
   await admin.connect();
   try {
-    const exists = await admin.query('SELECT 1 FROM pg_database WHERE datname = $1', [
-      E2E_DB_NAME,
-    ]);
+    const exists = await admin.query('SELECT 1 FROM pg_database WHERE datname = $1', [E2E_DB_NAME]);
     if (exists.rowCount === 0) {
       // Identifier is a constant, not user input.
       await admin.query(`CREATE DATABASE ${E2E_DB_NAME}`);
@@ -36,15 +34,11 @@ export async function prepareDatabase(): Promise<void> {
   }
 
   // Apply migrations against the e2e database via the db package's prisma CLI.
-  execFileSync(
-    join(dbPkg, 'node_modules', '.bin', 'prisma'),
-    ['migrate', 'deploy'],
-    {
-      cwd: dbPkg,
-      env: { ...process.env, DATABASE_URL: E2E_DATABASE_URL },
-      stdio: 'inherit',
-    },
-  );
+  execFileSync(join(dbPkg, 'node_modules', '.bin', 'prisma'), ['migrate', 'deploy'], {
+    cwd: dbPkg,
+    env: { ...process.env, DATABASE_URL: E2E_DATABASE_URL },
+    stdio: 'inherit',
+  });
 }
 
 export function getPrisma(): PrismaClient {

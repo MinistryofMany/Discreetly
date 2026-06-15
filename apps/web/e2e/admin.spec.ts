@@ -1,12 +1,5 @@
 import { test, expect, type Locator } from '@playwright/test';
-import {
-  signIn,
-  resetData,
-  seedAdmin,
-  subFor,
-  getPrisma,
-  unique,
-} from './harness/helpers.js';
+import { signIn, resetData, seedAdmin, subFor, getPrisma, unique } from './harness/helpers.js';
 
 /** Fill the input whose containing div holds a <label> with the given text. */
 function fieldByLabel(scope: Locator, label: string): Locator {
@@ -83,7 +76,10 @@ test('admin: create (open + custom policy), edit, delete room', async ({ page })
   // --- Delete the open room ---
   const openRow = page.getByRole('row', { name: new RegExp(openSlug) });
   await openRow.getByRole('button', { name: /^delete$/i }).click();
-  await page.getByRole('dialog').getByRole('button', { name: /^delete$/i }).click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: /^delete$/i })
+    .click();
   await expect.poll(() => db.room.count({ where: { slug: openSlug } })).toBe(0);
 });
 
@@ -144,9 +140,7 @@ test('admin: ban by IC, ban by join-nullifier, unban, inspect members', async ({
   await banIcSection.getByPlaceholder(/identity commitment/i).fill(ic);
   await banIcSection.getByRole('button', { name: /^ban$/i }).click();
   await expect(page.getByText('Banned by identity commitment')).toBeVisible();
-  await expect
-    .poll(async () => db.ban.count({ where: { roomId: room.id } }))
-    .toBeGreaterThan(0);
+  await expect.poll(async () => db.ban.count({ where: { roomId: room.id } })).toBeGreaterThan(0);
   await expect
     .poll(async () => (await db.membership.findFirstOrThrow({ where: { roomId: room.id } })).status)
     .toBe('BANNED');

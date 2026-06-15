@@ -123,8 +123,7 @@ function roomToFormState(room: AdminRoom): RoomFormState {
   try {
     policyRoot = deserializeNode(room.accessPolicy as Record<string, unknown> as never);
     openPolicy =
-      policyRoot.kind === 'allOf' &&
-      (policyRoot as { children: unknown[] }).children.length === 0;
+      policyRoot.kind === 'allOf' && (policyRoot as { children: unknown[] }).children.length === 0;
   } catch {
     // fallback to open
   }
@@ -242,19 +241,11 @@ function RoomDialog({ open, onClose, editRoom }: RoomDialogProps) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="mb-1 block text-xs">Name</Label>
-              <Input
-                required
-                value={form.name}
-                onChange={(e) => field('name', e.target.value)}
-              />
+              <Input required value={form.name} onChange={(e) => field('name', e.target.value)} />
             </div>
             <div>
               <Label className="mb-1 block text-xs">Slug</Label>
-              <Input
-                required
-                value={form.slug}
-                onChange={(e) => field('slug', e.target.value)}
-              />
+              <Input required value={form.slug} onChange={(e) => field('slug', e.target.value)} />
             </div>
           </div>
 
@@ -378,15 +369,10 @@ function RoomDialog({ open, onClose, editRoom }: RoomDialogProps) {
                 Open - any visitor may join (no badge required).
               </p>
             ) : (
-              <PolicyBuilder
-                root={form.policyRoot}
-                onChange={(r) => field('policyRoot', r)}
-              />
+              <PolicyBuilder root={form.policyRoot} onChange={(r) => field('policyRoot', r)} />
             )}
 
-            {policyError && (
-              <p className="mt-2 text-xs text-destructive">{policyError}</p>
-            )}
+            {policyError && <p className="mt-2 text-xs text-destructive">{policyError}</p>}
 
             {policyJson && (
               <details className="mt-2">
@@ -463,9 +449,7 @@ function RoomsTab() {
       </div>
 
       {roomsQ.isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
-      {roomsQ.isError && (
-        <p className="text-sm text-destructive">{roomsQ.error.message}</p>
-      )}
+      {roomsQ.isError && <p className="text-sm text-destructive">{roomsQ.error.message}</p>}
 
       {!roomsQ.isLoading && rooms.length === 0 && (
         <p className="text-sm text-muted-foreground">No rooms yet.</p>
@@ -543,11 +527,7 @@ function RoomsTab() {
             <DialogClose asChild>
               <Button variant="outline">Cancel</Button>
             </DialogClose>
-            <Button
-              variant="destructive"
-              disabled={deleting}
-              onClick={() => void handleDelete()}
-            >
+            <Button variant="destructive" disabled={deleting} onClick={() => void handleDelete()}>
               {deleting ? 'Deleting...' : 'Delete'}
             </Button>
           </DialogFooter>
@@ -810,10 +790,7 @@ function MembersTab() {
                 <div className="mt-2 space-y-1">
                   <p className="text-xs font-medium text-muted-foreground">Leaves (devices)</p>
                   {m.leaves.map((leaf) => (
-                    <div
-                      key={leaf.identityCommitment}
-                      className="rounded bg-muted/40 p-2 text-xs"
-                    >
+                    <div key={leaf.identityCommitment} className="rounded bg-muted/40 p-2 text-xs">
                       <p className="break-all font-mono">IC: {leaf.identityCommitment}</p>
                       {leaf.deviceLabel && (
                         <p className="text-muted-foreground">Label: {leaf.deviceLabel}</p>
@@ -917,9 +894,7 @@ function AuditTab() {
         </div>
       </div>
 
-      {auditQ.isError && (
-        <p className="text-sm text-destructive">{auditQ.error.message}</p>
-      )}
+      {auditQ.isError && <p className="text-sm text-destructive">{auditQ.error.message}</p>}
       {rows.length === 0 && !auditQ.isLoading && (
         <p className="text-sm text-muted-foreground">No audit entries match the filters.</p>
       )}
@@ -1023,10 +998,7 @@ function BroadcastTab() {
           />
         </div>
 
-        <Button
-          type="submit"
-          disabled={!selectedRoom || !text.trim() || sending}
-        >
+        <Button type="submit" disabled={!selectedRoom || !text.trim() || sending}>
           {sending ? 'Sending...' : 'Send broadcast'}
         </Button>
       </form>

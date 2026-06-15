@@ -6,9 +6,6 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": [
-    "**/*.ts",
-    "../../../packages/shared/src/types/external-shims.d.ts"
-  ],
+  "include": ["**/*.ts", "../../../packages/shared/src/types/external-shims.d.ts"],
   "exclude": ["node_modules"]
 }
