@@ -6,7 +6,8 @@
 #   docker build -f services/api/Dockerfile -t discreetly-api .
 
 # ---- deps: install the full workspace and generate the Prisma client ----
-FROM node:20-bookworm-slim AS deps
+# node:20-bookworm-slim
+FROM node:20-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS deps
 WORKDIR /app
 
 # Prisma's query engine needs OpenSSL at generate and runtime.
@@ -25,7 +26,8 @@ RUN pnpm install --frozen-lockfile \
   && pnpm --filter @discreetly/db generate
 
 # ---- runner ----
-FROM node:20-bookworm-slim AS runner
+# node:20-bookworm-slim
+FROM node:20-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
