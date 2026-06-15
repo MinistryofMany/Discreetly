@@ -12,7 +12,8 @@
 # AUTH_*, and the server-side env are read at runtime.
 
 # ---- builder ----
-FROM node:20-bookworm-slim AS builder
+# node:20-bookworm-slim
+FROM node:20-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS builder
 WORKDIR /app
 
 # Prisma client generation (a workspace postinstall) needs OpenSSL.
@@ -38,7 +39,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm --filter @discreetly/web build
 
 # ---- runner ----
-FROM node:20-bookworm-slim AS runner
+# node:20-bookworm-slim
+FROM node:20-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
