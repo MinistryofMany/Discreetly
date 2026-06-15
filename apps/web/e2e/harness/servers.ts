@@ -118,6 +118,8 @@ export async function startServers(): Promise<RunningServers> {
       MINISTER_CLIENT_ID: MOCK_CLIENT_ID,
       API_PORT: String(API_PORT),
       ALLOWED_WS_ORIGINS: `${WEB_URL},http://localhost:${WEB_PORT}`,
+      // Disable transport-layer rate limiting so e2e bursts never flake.
+      RATE_LIMIT_ENABLED: 'false',
     },
   });
   pipe(api, 'api');

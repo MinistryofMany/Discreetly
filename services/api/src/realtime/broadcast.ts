@@ -1,4 +1,5 @@
 import { publisher, makeSubscriber, roomChannel } from './redis.js';
+import { logger } from '../log.js';
 
 export interface ChatBroadcast {
   kind: 'message';
@@ -48,14 +49,15 @@ export async function* roomMessages(
 
   sub.on('error', (e) => {
     // An unhandled 'error' event on the ioredis EventEmitter would throw; absorb + log.
-    console.error('[broadcast] subscriber error', e);
+    logger.error({ err: e, roomId }, 'broadcast subscriber error');
   });
   sub.on('message', (_ch, payload) => {
     let parsed: RoomBroadcast;
     try {
       parsed = JSON.parse(payload) as RoomBroadcast;
     } catch (e) {
-      console.error('[broadcast] dropping malformed payload', e);
+      // Do not log the payload (may contain message plaintext); log only the error.
+      logger.error({ err: e, roomId }, 'broadcast dropping malformed payload');
       return;
     }
     queue.push(parsed);

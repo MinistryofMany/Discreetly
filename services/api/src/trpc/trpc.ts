@@ -1,6 +1,7 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import { prisma } from '@discreetly/db';
 import type { VerifiedIdentity } from '../minister/verify.js';
+import { formatTrpcError } from './error-formatter.js';
 
 export type VerifyFn = (idToken: string) => Promise<VerifiedIdentity>;
 
@@ -14,7 +15,9 @@ export interface Context {
   adminIdToken?: string;
 }
 
-const t = initTRPC.context<Context>().create();
+const t = initTRPC.context<Context>().create({
+  errorFormatter: (opts) => formatTrpcError(opts),
+});
 export const router = t.router;
 export const publicProcedure = t.procedure;
 
