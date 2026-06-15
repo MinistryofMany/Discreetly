@@ -5,6 +5,13 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // Mirror next.config.ts: the real circuits package reads artifacts from
+      // disk with `node:fs`/`fileURLToPath` at module load, which breaks under
+      // the happy-dom test environment. The browser (and these unit tests)
+      // never use the on-disk defaults, so alias to the fs-free stub.
+      '@discreetly/circuits': fileURLToPath(
+        new URL('./src/lib/circuits-browser-stub.ts', import.meta.url),
+      ),
     },
   },
   test: {

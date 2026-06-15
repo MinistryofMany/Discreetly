@@ -1,6 +1,8 @@
+import Link from 'next/link';
 import { auth } from '@/auth';
 import { SignInButton, SignOutButton } from '@/components/auth-buttons';
 import { RoomList } from '@/components/room-list';
+import { Button } from '@/components/ui/button';
 
 export default async function HomePage() {
   const session = await auth();
@@ -14,7 +16,12 @@ export default async function HomePage() {
             Anonymous, rate-limited chat with verifiable credentials.
           </p>
         </div>
-        {session ? <SignOutButton /> : <SignInButton />}
+        <div className="flex items-center gap-2">
+          <Button asChild variant="outline">
+            <Link href="/identity">Identity</Link>
+          </Button>
+          {session ? <SignOutButton /> : <SignInButton />}
+        </div>
       </header>
 
       {session ? (
