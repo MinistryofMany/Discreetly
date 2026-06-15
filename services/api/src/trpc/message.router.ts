@@ -21,4 +21,14 @@ export const messageRouter = router({
         sessionColor: input.sessionColor,
       }),
     ),
+
+  subscribe: publicProcedure
+    .input(z.object({ roomId: z.string() }))
+    .subscription(async function* (opts) {
+      const { roomMessages } = await import('../realtime/broadcast.js');
+      const signal = opts.signal ?? new AbortController().signal;
+      for await (const msg of roomMessages(opts.input.roomId, signal)) {
+        yield msg;
+      }
+    }),
 });
