@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { prisma } from '@discreetly/db';
 import { createLocalJWKSet } from 'jose';
@@ -11,6 +12,7 @@ import {
   MOCK_CLIENT_ID,
 } from '../test/mock-issuer.js';
 import { OPEN_POLICY } from '@discreetly/policy';
+import { hashRoomPassword, verifyRoomPassword } from './room-crypto.js';
 
 const mockVerifier = makeVerifier({
   issuer: MOCK_ISSUER,
@@ -19,7 +21,9 @@ const mockVerifier = makeVerifier({
   jwks: createLocalJWKSet(await jwks()),
 });
 
-const ADMIN_SUB = `room-admin-${Date.now()}`;
+const ADMIN_SUB = `room-admin-${randomUUID()}`;
+/** Unique slug per call so shared-DB runs never collide. */
+const uniqueSlug = (prefix: string): string => `${prefix}-${randomUUID()}`;
 const createdRoomIds: string[] = [];
 
 async function adminCaller() {
@@ -43,7 +47,7 @@ afterAll(async () => {
 describe('admin room CRUD', () => {
   it('creates an open room: row exists, rlnIdentifier is numeric, no passwordHash in response', async () => {
     const caller = await adminCaller();
-    const slug = `open-room-${Date.now()}`;
+    const slug = uniqueSlug('open-room');
     const result = await caller.admin.room.create({
       name: 'Open Room',
       slug,
@@ -67,7 +71,7 @@ describe('admin room CRUD', () => {
 
   it('creates an AES room with password: passwordHash stored in DB, not in response', async () => {
     const caller = await adminCaller();
-    const slug = `aes-room-${Date.now()}`;
+    const slug = uniqueSlug('aes-room');
     const result = await caller.admin.room.create({
       name: 'AES Room',
       slug,
@@ -92,14 +96,14 @@ describe('admin room CRUD', () => {
     const caller = await adminCaller();
     const r1 = await caller.admin.room.create({
       name: 'Unique Test 1',
-      slug: `unique-1-${Date.now()}`,
+      slug: uniqueSlug('unique-1'),
       rateLimit: 1000,
       userMessageLimit: 3,
       accessPolicy: OPEN_POLICY,
     });
     const r2 = await caller.admin.room.create({
       name: 'Unique Test 2',
-      slug: `unique-2-${Date.now()}`,
+      slug: uniqueSlug('unique-2'),
       rateLimit: 1000,
       userMessageLimit: 3,
       accessPolicy: OPEN_POLICY,
@@ -114,7 +118,7 @@ describe('admin room CRUD', () => {
     await expect(
       caller.admin.room.create({
         name: 'Bad Policy',
-        slug: `bad-policy-${Date.now()}`,
+        slug: uniqueSlug('bad-policy'),
         rateLimit: 1000,
         userMessageLimit: 3,
         accessPolicy: {} as never,
@@ -127,7 +131,7 @@ describe('admin room CRUD', () => {
     await expect(
       caller.admin.room.create({
         name: 'AES No Password',
-        slug: `aes-no-pw-${Date.now()}`,
+        slug: uniqueSlug('aes-no-pw'),
         rateLimit: 1000,
         userMessageLimit: 3,
         encryption: 'AES',
@@ -140,7 +144,7 @@ describe('admin room CRUD', () => {
     const caller = await adminCaller();
     const created = await caller.admin.room.create({
       name: 'Update Test',
-      slug: `update-test-${Date.now()}`,
+      slug: uniqueSlug('update-test'),
       rateLimit: 1000,
       userMessageLimit: 3,
       accessPolicy: OPEN_POLICY,
@@ -163,7 +167,7 @@ describe('admin room CRUD', () => {
     const caller = await adminCaller();
     const created = await caller.admin.room.create({
       name: 'Update Policy Test',
-      slug: `update-policy-${Date.now()}`,
+      slug: uniqueSlug('update-policy'),
       rateLimit: 1000,
       userMessageLimit: 3,
       accessPolicy: OPEN_POLICY,
@@ -186,7 +190,7 @@ describe('admin room CRUD', () => {
     const caller = await adminCaller();
     const created = await caller.admin.room.create({
       name: 'Delete Test',
-      slug: `delete-test-${Date.now()}`,
+      slug: uniqueSlug('delete-test'),
       rateLimit: 1000,
       userMessageLimit: 3,
       accessPolicy: OPEN_POLICY,
@@ -196,7 +200,7 @@ describe('admin room CRUD', () => {
     const membership = await prisma.membership.create({
       data: {
         roomId: created.id,
-        joinNullifier: `jn-del-${Date.now()}`,
+        joinNullifier: `jn-del-${randomUUID()}`,
       },
     });
 
@@ -219,7 +223,7 @@ describe('admin room CRUD', () => {
 
   it('list includes PRIVATE rooms', async () => {
     const caller = await adminCaller();
-    const slug = `private-room-${Date.now()}`;
+    const slug = uniqueSlug('private-room');
     const created = await caller.admin.room.create({
       name: 'Private Room',
       slug,
@@ -252,7 +256,7 @@ describe('admin room CRUD', () => {
 
   it('room.get returns any room by id, no passwordHash', async () => {
     const caller = await adminCaller();
-    const slug = `get-test-${Date.now()}`;
+    const slug = uniqueSlug('get-test');
     const created = await caller.admin.room.create({
       name: 'Get Test',
       slug,
@@ -277,7 +281,7 @@ describe('admin room CRUD', () => {
 
   it('audit rows written for create, update, delete', async () => {
     const caller = await adminCaller();
-    const slug = `audit-test-${Date.now()}`;
+    const slug = uniqueSlug('audit-test');
     const created = await caller.admin.room.create({
       name: 'Audit Test',
       slug,
@@ -302,5 +306,93 @@ describe('admin room CRUD', () => {
       where: { actor: ADMIN_SUB, action: 'ROOM_DELETE', target: created.id },
     });
     expect(deleteLogs).toHaveLength(1);
+  });
+
+  it('rejects a duplicate slug with BAD_REQUEST', async () => {
+    const caller = await adminCaller();
+    const slug = uniqueSlug('dup-slug');
+    const first = await caller.admin.room.create({
+      name: 'Dup Slug 1',
+      slug,
+      rateLimit: 1000,
+      userMessageLimit: 3,
+      accessPolicy: OPEN_POLICY,
+    });
+    createdRoomIds.push(first.id);
+
+    await expect(
+      caller.admin.room.create({
+        name: 'Dup Slug 2',
+        slug,
+        rateLimit: 1000,
+        userMessageLimit: 3,
+        accessPolicy: OPEN_POLICY,
+      }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+  });
+
+  it('allows userMessageLimit change on an empty room', async () => {
+    const caller = await adminCaller();
+    const created = await caller.admin.room.create({
+      name: 'UML Empty',
+      slug: uniqueSlug('uml-empty'),
+      rateLimit: 1000,
+      userMessageLimit: 3,
+      accessPolicy: OPEN_POLICY,
+    });
+    createdRoomIds.push(created.id);
+
+    const updated = await caller.admin.room.update({ id: created.id, userMessageLimit: 7 });
+    expect(updated.userMessageLimit).toBe(7);
+  });
+
+  it('rejects userMessageLimit change on a room with members', async () => {
+    const caller = await adminCaller();
+    const created = await caller.admin.room.create({
+      name: 'UML Members',
+      slug: uniqueSlug('uml-members'),
+      rateLimit: 1000,
+      userMessageLimit: 3,
+      accessPolicy: OPEN_POLICY,
+    });
+    createdRoomIds.push(created.id);
+
+    await prisma.membership.create({
+      data: { roomId: created.id, joinNullifier: `jn-uml-${randomUUID()}` },
+    });
+
+    await expect(
+      caller.admin.room.update({ id: created.id, userMessageLimit: 9 }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+
+    // Same value is a no-op and must be allowed even with members.
+    const noop = await caller.admin.room.update({ id: created.id, userMessageLimit: 3 });
+    expect(noop.userMessageLimit).toBe(3);
+  });
+});
+
+describe('room password hashing', () => {
+  it('round-trips a correct password and encodes scrypt params', async () => {
+    const stored = await hashRoomPassword('correct horse battery staple');
+    expect(stored).toMatch(/^scrypt\$\d+\$\d+\$\d+\$[0-9a-f]+\$[0-9a-f]+$/);
+    expect(await verifyRoomPassword('correct horse battery staple', stored)).toBe(true);
+  });
+
+  it('rejects a wrong password', async () => {
+    const stored = await hashRoomPassword('right-password');
+    expect(await verifyRoomPassword('wrong-password', stored)).toBe(false);
+  });
+
+  it('returns false (does not throw) on a malformed stored hash', async () => {
+    expect(await verifyRoomPassword('x', 'not-a-valid-hash')).toBe(false);
+    expect(await verifyRoomPassword('x', 'scrypt$only$three')).toBe(false);
+    expect(await verifyRoomPassword('x', 'scrypt$bad$8$1$dead$beef')).toBe(false);
+  });
+
+  it('verifies legacy-shorter hashes without a RangeError (length-mismatch guard)', async () => {
+    // A stored hash whose digest length differs from the candidate digest must
+    // return false rather than throwing inside timingSafeEqual.
+    const stored = 'scrypt$1024$8$1$00112233445566778899aabbccddeeff$00ff';
+    expect(await verifyRoomPassword('whatever', stored)).toBe(false);
   });
 });
