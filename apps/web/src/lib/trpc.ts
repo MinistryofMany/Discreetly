@@ -44,9 +44,14 @@ export function makeTRPCClient(getIdToken: () => string | null) {
         condition: (op) => op.type === 'subscription',
         true: wsClient
           ? wsLink<AppRouter>({ client: wsClient })
-          : httpBatchLink({ url: API_URL }),
+          : httpBatchLink({ url: API_URL, methodOverride: 'POST' }),
         false: httpBatchLink({
           url: API_URL,
+          // Force POST for queries too. The default GET serializes query input
+          // into the URL, which would leak the Bearer id_token (when passed as
+          // an input) into access logs / history / Referer. POST keeps inputs in
+          // the request body and the token in the Authorization header only.
+          methodOverride: 'POST',
           headers() {
             const idToken = getIdToken();
             return idToken ? { Authorization: `Bearer ${idToken}` } : {};
