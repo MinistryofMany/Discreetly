@@ -8,6 +8,7 @@ import {
   getPrisma,
   unique,
 } from './harness/helpers.js';
+import { API_URL } from './harness/env.js';
 
 const USER_EMAIL = 'chatter@example.com';
 const ADMIN_EMAIL = 'admin@example.com';
@@ -173,11 +174,17 @@ test('id_token never appears in a request URL (room reads use POST + header)', a
   // Let the room.get / room.leaves / message.list queries fire.
   await page.waitForTimeout(1_000);
 
-  // No JWT (eyJ...) and no `id_token`/`idToken` query param in ANY request URL.
-  const leaked = urls.filter(
+  // The bearer id_token is only ever attached to API (tRPC) requests, so only
+  // those URLs could leak it. (The NextAuth OIDC callback carries its own JWE
+  // `state` param, which is expected and unrelated to the id_token.) Assert no
+  // tRPC request URL contains a JWT or an id_token query param - they go in the
+  // POST body / Authorization header instead.
+  const apiUrls = urls.filter((u) => u.startsWith(API_URL));
+  expect(apiUrls.length, 'expected at least one tRPC request').toBeGreaterThan(0);
+  const leaked = apiUrls.filter(
     (u) => /eyJ[A-Za-z0-9_-]+\./.test(u) || /id[_-]?token/i.test(u),
   );
-  expect(leaked, `URLs leaking a token:\n${leaked.join('\n')}`).toEqual([]);
+  expect(leaked, `tRPC URLs leaking a token:\n${leaked.join('\n')}`).toEqual([]);
 });
 
 test('admin broadcast reaches a chat subscriber as a system message', async ({ browser }) => {

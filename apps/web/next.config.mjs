@@ -12,13 +12,16 @@ const API_WS_URL = process.env.NEXT_PUBLIC_API_WS_URL ?? 'ws://localhost:3002';
  * Content-Security-Policy. connect-src is restricted to self + the API. Scripts
  * need 'unsafe-inline' (Next injects an inline bootstrap) and 'unsafe-eval' /
  * 'wasm-unsafe-eval' (rlnjs compiles the RLN circuit wasm in the browser).
- * img-src allows data: for the identicon data URIs.
+ * worker-src must allow data: because ffjavascript (the snark prover) spawns its
+ * thread workers from a `data:application/javascript` URL. img-src allows data:
+ * for the identicon data URIs.
  */
 const csp = [
   `default-src 'self'`,
   `connect-src 'self' ${API_URL} ${API_WS_URL}`,
   `img-src 'self' data:`,
-  `script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'`,
+  `script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:`,
+  `worker-src 'self' blob: data:`,
   `style-src 'self' 'unsafe-inline'`,
   `font-src 'self' data:`,
   `base-uri 'self'`,
