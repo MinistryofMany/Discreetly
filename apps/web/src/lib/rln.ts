@@ -10,8 +10,19 @@
  */
 import type { RLNFullProof } from 'rlnjs';
 import { calculateSignalHash, getRateCommitmentHash } from '@discreetly/crypto';
-import { buildGroup, merkleProofForLeaf, generateRLNProof } from '@discreetly/crypto/rln';
 import type { AppIdentity } from './identity';
+
+// `@discreetly/crypto/rln` transitively bundles rlnjs, whose CJS output touches
+// `Worker` at module top-level and throws under Node SSR. Import it lazily so
+// merely importing this module (e.g. for the pure helpers below, evaluated when
+// Next renders client components on the server) never pulls rlnjs into the SSR
+// graph. The proving path runs only in the browser.
+type RlnModule = typeof import('@discreetly/crypto/rln');
+let rlnModulePromise: Promise<RlnModule> | null = null;
+function loadRln(): Promise<RlnModule> {
+  rlnModulePromise ??= import('@discreetly/crypto/rln');
+  return rlnModulePromise;
+}
 
 const ARTIFACT_BASE = '/circuits/rln';
 
@@ -127,6 +138,7 @@ export interface ProveMessageInput {
  * throws.
  */
 export async function proveMessage(input: ProveMessageInput): Promise<RLNFullProof> {
+  const { merkleProofForLeaf, generateRLNProof } = await loadRln();
   const { wasm, zkey } = await getArtifacts();
   const rateCommitment = getRateCommitmentHash(input.identity.commitment, input.userMessageLimit);
   const merkleProof = merkleProofForLeaf(input.rlnIdentifier, input.leaves, rateCommitment);
@@ -149,5 +161,3 @@ export async function proveMessage(input: ProveMessageInput): Promise<RLNFullPro
 export function rateCommitmentFor(identity: AppIdentity, userMessageLimit: bigint): bigint {
   return getRateCommitmentHash(identity.commitment, userMessageLimit);
 }
-
-export { buildGroup };

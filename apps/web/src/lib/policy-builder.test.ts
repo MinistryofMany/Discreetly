@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PolicyNode } from '@discreetly/policy';
-import { policyNodeSchema, OPEN_POLICY } from '@discreetly/policy';
+import { policyNodeSchema } from '@discreetly/policy';
 import {
   type PolicyBuilderNode,
   type CompositeBuilderNode,
@@ -11,7 +11,6 @@ import {
   makeAtLeast,
   makeBadge,
   makeOpenPolicy,
-  openPolicyNode,
   serializeNode,
   deserializeNode,
   buildAndValidate,
@@ -184,9 +183,8 @@ describe('OPEN_POLICY shortcut', () => {
     expect(node.children).toHaveLength(0);
   });
 
-  it('openPolicyNode() matches OPEN_POLICY after serialization', () => {
-    const node = openPolicyNode();
-    expect(serializeNode(node)).toEqual(OPEN_POLICY);
+  it('makeOpenPolicy serializes to the empty allOf policy', () => {
+    expect(serializeNode(makeOpenPolicy())).toEqual({ allOf: [] });
   });
 
   it('buildAndValidate on open policy returns ok=true', () => {
