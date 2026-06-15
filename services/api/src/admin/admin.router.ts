@@ -7,6 +7,7 @@ import { generateRlnIdentifier, hashRoomPassword } from './room-admin.js';
 import { audit } from './audit.js';
 import { PUBLIC_ROOM_FIELDS } from '../trpc/room-fields.js';
 import { policyNodeSchema } from '@discreetly/policy';
+import { publishSystem } from '../realtime/broadcast.js';
 
 const roomAdminRouter = router({
   create: adminProcedure
@@ -171,6 +172,32 @@ const roomAdminRouter = router({
       if (!room) throw new TRPCError({ code: 'NOT_FOUND', message: 'room not found' });
       return room;
     }),
+
+  memberships: adminProcedure
+    .input(z.object({ roomId: z.string() }))
+    .query(async ({ input }) => {
+      const room = await prisma.room.findUnique({ where: { id: input.roomId }, select: { id: true } });
+      if (!room) throw new TRPCError({ code: 'NOT_FOUND', message: 'room not found' });
+
+      return prisma.membership.findMany({
+        where: { roomId: input.roomId },
+        select: {
+          status: true,
+          joinNullifier: true,
+          createdAt: true,
+          leaves: {
+            where: { revokedAt: null },
+            select: {
+              identityCommitment: true,
+              rateCommitment: true,
+              deviceLabel: true,
+              createdAt: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+    }),
 });
 
 export const adminRouter = router({
@@ -209,4 +236,44 @@ export const adminRouter = router({
     .mutation(async ({ input, ctx }) =>
       unban({ roomId: input.roomId, joinNullifier: input.joinNullifier, actor: ctx.adminSub }),
     ),
+
+  auditLog: adminProcedure
+    .input(
+      z.object({
+        roomId: z.string().optional(),
+        actor: z.string().optional(),
+        action: z.string().optional(),
+        limit: z.number().int().min(1).max(500).default(100),
+      }),
+    )
+    .query(async ({ input }) => {
+      const where: Prisma.AuditLogWhereInput = {};
+      if (input.roomId !== undefined) where.target = input.roomId;
+      if (input.actor !== undefined) where.actor = input.actor;
+      if (input.action !== undefined) where.action = input.action;
+
+      return prisma.auditLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: input.limit,
+      });
+    }),
+
+  broadcast: adminProcedure
+    .input(z.object({ roomId: z.string(), text: z.string().min(1) }))
+    .mutation(async ({ input, ctx }) => {
+      const room = await prisma.room.findUnique({ where: { id: input.roomId }, select: { id: true } });
+      if (!room) throw new TRPCError({ code: 'NOT_FOUND', message: 'room not found' });
+
+      const createdAt = new Date().toISOString();
+      await publishSystem(input.roomId, input.text, createdAt);
+      await audit({
+        actor: ctx.adminSub,
+        action: 'SYSTEM_BROADCAST',
+        target: input.roomId,
+        metadata: { text: input.text },
+      });
+
+      return { ok: true as const };
+    }),
 });
