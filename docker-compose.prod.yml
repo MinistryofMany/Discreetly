@@ -79,11 +79,11 @@ services:
       migrate:
         condition: service_completed_successfully
     healthcheck:
-      # tRPC public query - succeeds once the HTTP server + DB are up.
+      # Readiness probe - 200 once the HTTP server + Postgres + Redis are reachable.
       test:
         [
           'CMD-SHELL',
-          'node -e "fetch(\"http://127.0.0.1:3002/room.listPublic?input=%7B%7D\").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
+          'node -e "fetch(\"http://127.0.0.1:3002/ready\").then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
         ]
       interval: 5s
       timeout: 5s

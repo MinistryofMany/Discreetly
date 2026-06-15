@@ -49,5 +49,10 @@ USER node
 
 EXPOSE 3002
 
+# Liveness probe (node fetch; the slim image has no curl). /health is a cheap
+# process-up check that bypasses rate limiting and CORS.
+HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=5 \
+  CMD node -e "fetch('http://127.0.0.1:3002/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
 # tsx runs src/server.ts (see services/api/package.json `start`).
 CMD ["pnpm", "--filter", "@discreetly/api", "start"]
