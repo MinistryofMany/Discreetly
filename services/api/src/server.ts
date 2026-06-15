@@ -1,9 +1,13 @@
 import { createHTTPServer } from '@trpc/server/adapters/standalone';
+import { applyWSSHandler } from '@trpc/server/adapters/ws';
+import { WebSocketServer } from 'ws';
 import { appRouter } from './trpc/app.router.js';
 import { getProductionVerifier } from './minister/production-verifier.js';
 import { getConfig } from './config.js';
 
-const server = createHTTPServer({
+const { API_PORT } = getConfig();
+
+const httpServer = createHTTPServer({
   router: appRouter,
   middleware: (req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -19,6 +23,9 @@ const server = createHTTPServer({
   createContext: () => ({ verify: getProductionVerifier() }),
 });
 
-const { API_PORT } = getConfig();
-server.listen(API_PORT);
+const wss = new WebSocketServer({ server: httpServer });
+applyWSSHandler({ wss, router: appRouter, createContext: () => ({ verify: getProductionVerifier() }) });
+
+httpServer.listen(API_PORT);
 console.log(`[discreetly:api] tRPC on http://localhost:${API_PORT}`);
+console.log(`[discreetly:api] tRPC/WS on ws://localhost:${API_PORT}`);
