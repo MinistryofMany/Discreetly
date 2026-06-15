@@ -106,8 +106,14 @@ test('per-epoch rate limit blocks a second send in the same window', async ({ pa
   await page.getByPlaceholder(/type a message/i).fill('second');
   await page.getByRole('button', { name: /send message/i }).click();
   await expect(page.getByText(/rate limit reached for this epoch/i)).toBeVisible();
-  // No second message was persisted.
-  await page.waitForTimeout(1_000);
+  // No second message is ever persisted: the count must stay at exactly 1 for
+  // the whole polling window (a flake-resistant "stays 1" rather than a sleep).
+  await expect
+    .poll(() => db.message.count({ where: { roomId: room.id } }), {
+      timeout: 3_000,
+      intervals: [250, 250, 250],
+    })
+    .toBe(1);
   expect(await db.message.count({ where: { roomId: room.id } })).toBe(1);
 });
 
