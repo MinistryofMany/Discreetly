@@ -1,11 +1,17 @@
 import { prisma, BanReason, MembershipStatus } from '@discreetly/db';
-import { shamirRecovery, getIdentityCommitmentFromSecret, getRateCommitmentHash } from '@discreetly/crypto';
+import {
+  shamirRecovery,
+  getIdentityCommitmentFromSecret,
+  getRateCommitmentHash,
+} from '@discreetly/crypto';
 
 export interface BanInput {
   roomId: string;
   userMessageLimit: number;
-  x1: string; y1: string; // prior (stored) point
-  x2: string; y2: string; // new (colliding) point
+  x1: string;
+  y1: string; // prior (stored) point
+  x2: string;
+  y2: string; // new (colliding) point
 }
 
 export type BanOutcome =
@@ -14,9 +20,17 @@ export type BanOutcome =
 
 /** Recover the spammer's secret via Shamir, find their leaf, ban the membership (prune all its leaves). */
 export async function banOnCollision(input: BanInput): Promise<BanOutcome> {
-  const secret = shamirRecovery(BigInt(input.x1), BigInt(input.x2), BigInt(input.y1), BigInt(input.y2));
+  const secret = shamirRecovery(
+    BigInt(input.x1),
+    BigInt(input.x2),
+    BigInt(input.y1),
+    BigInt(input.y2),
+  );
   const identityCommitment = getIdentityCommitmentFromSecret(secret);
-  const rateCommitment = getRateCommitmentHash(identityCommitment, input.userMessageLimit).toString();
+  const rateCommitment = getRateCommitmentHash(
+    identityCommitment,
+    input.userMessageLimit,
+  ).toString();
 
   return prisma.$transaction(async (tx) => {
     const leaf = await tx.membershipLeaf.findUnique({
@@ -30,7 +44,9 @@ export async function banOnCollision(input: BanInput): Promise<BanOutcome> {
       data: { status: MembershipStatus.BANNED },
       select: { joinNullifier: true },
     });
-    const pruned = await tx.membershipLeaf.deleteMany({ where: { membershipId: leaf.membershipId } });
+    const pruned = await tx.membershipLeaf.deleteMany({
+      where: { membershipId: leaf.membershipId },
+    });
     await tx.ban.create({
       data: {
         roomId: input.roomId,
@@ -40,6 +56,10 @@ export async function banOnCollision(input: BanInput): Promise<BanOutcome> {
         shamirSecret: secret.toString(),
       },
     });
-    return { banned: true as const, joinNullifier: membership.joinNullifier, prunedLeaves: pruned.count };
+    return {
+      banned: true as const,
+      joinNullifier: membership.joinNullifier,
+      prunedLeaves: pruned.count,
+    };
   });
 }

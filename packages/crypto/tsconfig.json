@@ -4,8 +4,12 @@
     "noEmit": true,
     "types": ["node"],
     "paths": {
-      "@semaphore-protocol/group": ["./node_modules/@semaphore-protocol/group/dist/types/index.d.ts"],
-      "@semaphore-protocol/identity": ["./node_modules/@semaphore-protocol/identity/dist/types/index.d.ts"]
+      "@semaphore-protocol/group": [
+        "./node_modules/@semaphore-protocol/group/dist/types/index.d.ts"
+      ],
+      "@semaphore-protocol/identity": [
+        "./node_modules/@semaphore-protocol/identity/dist/types/index.d.ts"
+      ]
     }
   },
   "include": ["src", "../shared/src/types/external-shims.d.ts"]

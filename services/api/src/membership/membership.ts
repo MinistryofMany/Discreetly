@@ -25,7 +25,8 @@ export async function joinRoom(args: JoinArgs): Promise<JoinResult> {
       create: { roomId: args.room.id, joinNullifier: args.joinNullifier },
       update: {},
     });
-    if (membership.status === MembershipStatus.BANNED) return { ok: false as const, reason: 'banned' as const };
+    if (membership.status === MembershipStatus.BANNED)
+      return { ok: false as const, reason: 'banned' as const };
 
     // Serialize concurrent joins for the same membership so the device-limit
     // count-then-create below is race-free.
@@ -39,7 +40,8 @@ export async function joinRoom(args: JoinArgs): Promise<JoinResult> {
     const activeLeaves = await tx.membershipLeaf.count({
       where: { membershipId: membership.id, revokedAt: null },
     });
-    if (activeLeaves >= args.room.maxDevices) return { ok: false as const, reason: 'device-limit' as const };
+    if (activeLeaves >= args.room.maxDevices)
+      return { ok: false as const, reason: 'device-limit' as const };
 
     const leaf = await tx.membershipLeaf.create({
       data: {
@@ -74,17 +76,20 @@ export async function rotateDevice(args: RotateArgs): Promise<RotateResult> {
       where: { roomId_joinNullifier: { roomId: args.room.id, joinNullifier: args.joinNullifier } },
     });
     if (!membership) return { ok: false as const, reason: 'no-membership' as const };
-    if (membership.status === MembershipStatus.BANNED) return { ok: false as const, reason: 'banned' as const };
+    if (membership.status === MembershipStatus.BANNED)
+      return { ok: false as const, reason: 'banned' as const };
 
     const old = await tx.membershipLeaf.findUnique({
       where: { roomId_rateCommitment: { roomId: args.room.id, rateCommitment: oldRc } },
     });
-    if (!old || old.membershipId !== membership.id) return { ok: false as const, reason: 'old-leaf-not-found' as const };
+    if (!old || old.membershipId !== membership.id)
+      return { ok: false as const, reason: 'old-leaf-not-found' as const };
 
     const collision = await tx.membershipLeaf.findUnique({
       where: { roomId_rateCommitment: { roomId: args.room.id, rateCommitment: newRc } },
     });
-    if (collision && collision.id !== old.id) return { ok: false as const, reason: 'new-leaf-exists' as const };
+    if (collision && collision.id !== old.id)
+      return { ok: false as const, reason: 'new-leaf-exists' as const };
 
     await tx.membershipLeaf.update({
       where: { id: old.id },

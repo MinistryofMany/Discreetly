@@ -22,9 +22,8 @@ export async function checkCollision(args: {
     select: { proof: true },
   });
   if (!prior) return { kind: 'new' };
-  const ps = (
-    prior.proof as { snarkProof: { publicSignals: { x: string; y: string } } }
-  ).snarkProof.publicSignals;
+  const ps = (prior.proof as { snarkProof: { publicSignals: { x: string; y: string } } }).snarkProof
+    .publicSignals;
   if (String(ps.x) === args.x) return { kind: 'duplicate' };
   return { kind: 'collision', prior: { x: String(ps.x), y: String(ps.y) } };
 }

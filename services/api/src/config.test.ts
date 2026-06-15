@@ -14,6 +14,8 @@ describe('loadConfig', () => {
     expect(c.MINISTER_CLIENT_ID).toBe('discreetly_dev');
   });
   it('rejects a missing issuer', () => {
-    expect(() => loadConfig({ DATABASE_URL: 'postgresql://u:p@h:5432/d' } as NodeJS.ProcessEnv)).toThrow();
+    expect(() =>
+      loadConfig({ DATABASE_URL: 'postgresql://u:p@h:5432/d' } as NodeJS.ProcessEnv),
+    ).toThrow();
   });
 });

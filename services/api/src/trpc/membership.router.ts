@@ -7,7 +7,14 @@ import { joinRoom, rotateDevice } from '../membership/membership.js';
 
 export const membershipRouter = router({
   join: publicProcedure
-    .input(z.object({ roomId: z.string(), idToken: z.string(), identityCommitment: z.string(), deviceLabel: z.string().optional() }))
+    .input(
+      z.object({
+        roomId: z.string(),
+        idToken: z.string(),
+        identityCommitment: z.string(),
+        deviceLabel: z.string().optional(),
+      }),
+    )
     .mutation(async ({ input, ctx }) => {
       const room = await prisma.room.findUnique({ where: { id: input.roomId } });
       if (!room) return { ok: false as const, reason: 'no-room' as const };
@@ -26,7 +33,14 @@ export const membershipRouter = router({
       });
     }),
   rotate: publicProcedure
-    .input(z.object({ roomId: z.string(), idToken: z.string(), oldIdentityCommitment: z.string(), newIdentityCommitment: z.string() }))
+    .input(
+      z.object({
+        roomId: z.string(),
+        idToken: z.string(),
+        oldIdentityCommitment: z.string(),
+        newIdentityCommitment: z.string(),
+      }),
+    )
     .mutation(async ({ input, ctx }) => {
       const room = await prisma.room.findUnique({ where: { id: input.roomId } });
       if (!room) return { ok: false as const, reason: 'no-room' as const };

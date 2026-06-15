@@ -5,7 +5,9 @@
     "types": ["node"],
     "paths": {
       "rlnjs": ["./node_modules/rlnjs/dist/types/index.d.ts"],
-      "@semaphore-protocol/identity": ["./node_modules/@semaphore-protocol/identity/dist/types/index.d.ts"]
+      "@semaphore-protocol/identity": [
+        "./node_modules/@semaphore-protocol/identity/dist/types/index.d.ts"
+      ]
     }
   },
   "include": ["src", "../../packages/shared/src/types/external-shims.d.ts"]

@@ -7,12 +7,21 @@ let room: { id: string; rlnIdentifier: string; userMessageLimit: number; maxDevi
 beforeAll(async () => {
   const r = await prisma.room.create({
     data: {
-      name: 'Mem Test', slug: `mem-${Date.now()}`, rlnIdentifier: `rln-${Date.now()}`,
-      rateLimit: 10_000, userMessageLimit: 5, maxDevices: 2,
+      name: 'Mem Test',
+      slug: `mem-${Date.now()}`,
+      rlnIdentifier: `rln-${Date.now()}`,
+      rateLimit: 10_000,
+      userMessageLimit: 5,
+      maxDevices: 2,
       accessPolicy: { badge: { type: 'email-domain' } },
     },
   });
-  room = { id: r.id, rlnIdentifier: r.rlnIdentifier, userMessageLimit: r.userMessageLimit, maxDevices: r.maxDevices };
+  room = {
+    id: r.id,
+    rlnIdentifier: r.rlnIdentifier,
+    userMessageLimit: r.userMessageLimit,
+    maxDevices: r.maxDevices,
+  };
 });
 afterAll(async () => {
   await prisma.room.delete({ where: { id: room.id } });
@@ -22,9 +31,19 @@ afterAll(async () => {
 describe('membership', () => {
   it('joins, adds a second device, then enforces the device limit', async () => {
     const n = 'jn-1';
-    const a = await joinRoom({ room, joinNullifier: n, identityCommitment: '111', deviceLabel: 'phone' });
+    const a = await joinRoom({
+      room,
+      joinNullifier: n,
+      identityCommitment: '111',
+      deviceLabel: 'phone',
+    });
     expect(a.ok).toBe(true);
-    const b = await joinRoom({ room, joinNullifier: n, identityCommitment: '222', deviceLabel: 'laptop' });
+    const b = await joinRoom({
+      room,
+      joinNullifier: n,
+      identityCommitment: '222',
+      deviceLabel: 'laptop',
+    });
     expect(b.ok).toBe(true);
     const c = await joinRoom({ room, joinNullifier: n, identityCommitment: '333' });
     expect(c).toMatchObject({ ok: false, reason: 'device-limit' });
@@ -45,9 +64,16 @@ describe('membership', () => {
   it('rotates a device leaf to a new identity commitment', async () => {
     const n = 'jn-2';
     await joinRoom({ room, joinNullifier: n, identityCommitment: '444' });
-    const r = await rotateDevice({ room, joinNullifier: n, oldIdentityCommitment: '444', newIdentityCommitment: '555' });
+    const r = await rotateDevice({
+      room,
+      joinNullifier: n,
+      oldIdentityCommitment: '444',
+      newIdentityCommitment: '555',
+    });
     expect(r.ok).toBe(true);
-    const leaf = await prisma.membershipLeaf.findFirst({ where: { roomId: room.id, identityCommitment: '555' } });
+    const leaf = await prisma.membershipLeaf.findFirst({
+      where: { roomId: room.id, identityCommitment: '555' },
+    });
     expect(leaf).toBeTruthy();
   });
 
@@ -69,7 +95,12 @@ describe('membership', () => {
     const n = 'jn-rot-collide';
     await joinRoom({ room, joinNullifier: n, identityCommitment: '2000' });
     await joinRoom({ room, joinNullifier: n, identityCommitment: '2001' });
-    const r = await rotateDevice({ room, joinNullifier: n, oldIdentityCommitment: '2000', newIdentityCommitment: '2001' });
+    const r = await rotateDevice({
+      room,
+      joinNullifier: n,
+      oldIdentityCommitment: '2000',
+      newIdentityCommitment: '2001',
+    });
     expect(r).toMatchObject({ ok: false, reason: 'new-leaf-exists' });
   });
 

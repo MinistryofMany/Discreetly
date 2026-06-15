@@ -29,7 +29,8 @@ export async function getRealMinisterIdToken(): Promise<string | null> {
   }
   try {
     const user = (await client.query('select id from "User" limit 1')).rows[0];
-    const badge = (await client.query(`select id from "Badge" where type='email-domain' limit 1`)).rows[0];
+    const badge = (await client.query(`select id from "Badge" where type='email-domain' limit 1`))
+      .rows[0];
     if (!user || !badge) return null;
 
     const verifier = b64url(randomBytes(32));
@@ -40,7 +41,15 @@ export async function getRealMinisterIdToken(): Promise<string | null> {
       `insert into "OidcAuthorizationCode"
        (code,"clientId","userId","redirectUri",scopes,"approvedBadgeIds",nonce,"codeChallenge","codeChallengeMethod","expiresAt")
        values ($1,'discreetly_dev',$2,$3,$4,$5,$6,$7,'S256', now() + interval '60 seconds')`,
-      [code, user.id, REDIRECT, ['openid', 'profile', 'badge:email-domain'], [badge.id], nonce, challenge],
+      [
+        code,
+        user.id,
+        REDIRECT,
+        ['openid', 'profile', 'badge:email-domain'],
+        [badge.id],
+        nonce,
+        challenge,
+      ],
     );
 
     const res = await fetch('http://localhost:3000/oidc/token', {
