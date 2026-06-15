@@ -1,11 +1,5 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "noEmit": true,
-    "types": ["node"],
-    "paths": {
-      "@semaphore-protocol/group": ["./node_modules/@semaphore-protocol/group/dist/types/index.d.ts"]
-    }
-  },
+  "compilerOptions": { "noEmit": true, "types": ["node"] },
   "include": ["src", "../../packages/shared/src/types/external-shims.d.ts"]
 }

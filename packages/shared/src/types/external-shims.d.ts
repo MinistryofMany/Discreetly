@@ -12,3 +12,18 @@ declare module 'ffjavascript' {
     normalize(a: bigint): bigint;
   }
 }
+
+declare module '@semaphore-protocol/group' {
+  export type MerkleProof = {
+    root: bigint | string;
+    leaf: bigint | string;
+    siblings: (bigint | string)[];
+    pathIndices: number[];
+  };
+  export class Group {
+    constructor(id: bigint | number | string, treeDepth?: number, members?: (bigint | string)[]);
+    readonly root: bigint | string;
+    indexOf(member: bigint | string): number;
+    generateMerkleProof(index: number): MerkleProof;
+  }
+}

@@ -1,7 +1,7 @@
 import { createHTTPServer } from '@trpc/server/adapters/standalone';
 import { appRouter } from './trpc/app.router.js';
-import { verifyMinisterIdToken } from './minister/verify.js';
-import { config } from './config.js';
+import { getProductionVerifier } from './minister/production-verifier.js';
+import { getConfig } from './config.js';
 
 const server = createHTTPServer({
   router: appRouter,
@@ -16,8 +16,9 @@ const server = createHTTPServer({
     }
     next();
   },
-  createContext: () => ({ verify: verifyMinisterIdToken }),
+  createContext: () => ({ verify: getProductionVerifier() }),
 });
 
-server.listen(config.API_PORT);
-console.log(`[discreetly:api] tRPC on http://localhost:${config.API_PORT}`);
+const { API_PORT } = getConfig();
+server.listen(API_PORT);
+console.log(`[discreetly:api] tRPC on http://localhost:${API_PORT}`);
