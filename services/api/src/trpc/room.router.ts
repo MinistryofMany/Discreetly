@@ -3,24 +3,7 @@ import { TRPCError } from '@trpc/server';
 import { prisma } from '@discreetly/db';
 import { router, publicProcedure } from './trpc.js';
 import { assertRoomReadable } from '../gate/read-access.js';
-
-// Non-secret room fields. Excludes `passwordHash` (AES-room secret) — never disclosed.
-const PUBLIC_ROOM_FIELDS = {
-  id: true,
-  name: true,
-  slug: true,
-  description: true,
-  rlnIdentifier: true,
-  rateLimit: true,
-  userMessageLimit: true,
-  maxDevices: true,
-  visibility: true,
-  persistence: true,
-  encryption: true,
-  accessPolicy: true,
-  createdAt: true,
-  updatedAt: true,
-} as const;
+import { PUBLIC_ROOM_FIELDS } from './room-fields.js';
 
 export const roomRouter = router({
   get: publicProcedure
