@@ -23,6 +23,9 @@ interface VcBody {
 export function makeVerifier(deps: VerifierDeps) {
   return async function verifyMinisterIdToken(idToken: string): Promise<VerifiedIdentity> {
     const { payload } = await jwtVerify(idToken, deps.jwks, {
+      // Pin the signature algorithm so a token cannot downgrade to an
+      // unexpected alg (e.g. "none" or a symmetric alg) against the JWKS.
+      algorithms: ['EdDSA'],
       issuer: deps.issuer,
       audience: deps.audience,
       requiredClaims: ['exp', 'iat'],
@@ -35,7 +38,13 @@ export function makeVerifier(deps: VerifierDeps) {
     const badges: VerifiedBadge[] = [];
     for (const vcJwt of raw) {
       if (typeof vcJwt !== 'string') throw new Error('non-string badge entry');
-      const { payload: vc } = await jwtVerify(vcJwt, deps.jwks, { requiredClaims: ['exp', 'iat'] });
+      const { payload: vc } = await jwtVerify(vcJwt, deps.jwks, {
+        algorithms: ['EdDSA'],
+        issuer: deps.vcIssuer,
+        requiredClaims: ['exp', 'iat'],
+      });
+      // jose already enforces the issuer above; this redundant check keeps a
+      // precise error message and guards if the option is ever changed.
       if (vc.iss !== deps.vcIssuer) throw new Error(`unexpected VC issuer: ${String(vc.iss)}`);
       const body = vc.vc as VcBody | undefined;
       if (!body?.type || !body.credentialSubject) throw new Error('malformed VC');
