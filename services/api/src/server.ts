@@ -15,6 +15,7 @@ export type {
   AuditLogRow,
   MessageListItem,
 } from './trpc/outputs.js';
+export type { RoomBroadcast, ChatBroadcast, SystemBroadcast } from './realtime/broadcast.js';
 
 const { API_PORT } = getConfig();
 

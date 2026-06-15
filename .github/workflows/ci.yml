@@ -1,0 +1,213 @@
+# CI pipeline for the Discreetly monorepo.
+#
+# Two jobs:
+#   ci    - typecheck, lint, unit tests, web build
+#   e2e   - Playwright end-to-end suite (self-hosted harness)
+#
+# Both jobs need Postgres 16 + Redis 7. The CI .env is written by a step so
+# that the dotenv-based test scripts (`dotenv -e ../../.env -- vitest run`) and
+# the API's zod config schema (`getConfig()`) both validate at startup.
+#
+# MINISTER_* values are dummy/test URLs: unit tests use the in-process mock
+# issuer; live-Minister tests skip automatically when MINISTER_DEV_DATABASE_URL
+# is unset and discovery is unreachable (which it always is in CI).
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+env:
+  # Resolved at the workflow level so both jobs share the same values.
+  PNPM_VERSION: "9.12.0"
+  NODE_VERSION: "20"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # ci: typecheck, lint, unit tests, Next.js production build
+  # ---------------------------------------------------------------------------
+  ci:
+    name: CI (typecheck / lint / test / build)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: discreetly
+          POSTGRES_PASSWORD: discreetly
+          POSTGRES_DB: discreetly
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U discreetly"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # --- pnpm + Node setup ------------------------------------------------
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      # --- Install dependencies ---------------------------------------------
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # --- Write CI .env at the repo root -----------------------------------
+      # The API reads this via `dotenv -e ../../.env` (relative from packages/*)
+      # and via `getConfig()` which validates the zod schema at process start.
+      # MINISTER_* are dummy values: unit tests use the in-process mock issuer.
+      - name: Write CI .env
+        run: |
+          cat > .env <<'EOF'
+          DATABASE_URL="postgresql://discreetly:discreetly@localhost:5432/discreetly?schema=public"
+          REDIS_URL="redis://localhost:6379"
+          MINISTER_ISSUER="http://localhost:19999"
+          MINISTER_JWKS_URL="http://localhost:19999/.well-known/jwks.json"
+          MINISTER_VC_ISSUER="did:web:ci.test.invalid"
+          MINISTER_CLIENT_ID="ci_test_client"
+          API_PORT="3002"
+          ALLOWED_WS_ORIGINS="http://localhost:3001"
+          EOF
+
+      # --- Apply schema migrations ------------------------------------------
+      # Runs `prisma migrate deploy` against the CI postgres service.
+      - name: Apply DB migrations
+        run: pnpm --filter @discreetly/db exec prisma migrate deploy
+        env:
+          DATABASE_URL: "postgresql://discreetly:discreetly@localhost:5432/discreetly?schema=public"
+
+      # --- Quality gates ----------------------------------------------------
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Unit tests
+        run: pnpm test
+
+      # --- Production build (web) ------------------------------------------
+      # Confirms the Next.js standalone build succeeds with the workspace deps.
+      # NEXT_PUBLIC_* are build-time inlined; dummy values are fine for a CI
+      # build check (they are not used at runtime in this job).
+      - name: Build web
+        run: pnpm --filter @discreetly/web build
+        env:
+          NEXT_PUBLIC_API_URL: "http://localhost:3002"
+          NEXT_PUBLIC_API_WS_URL: "ws://localhost:3002"
+
+  # ---------------------------------------------------------------------------
+  # e2e: Playwright suite - the harness self-hosts mock OIDC + API + web and
+  # creates an isolated `discreetly_e2e` Postgres database.
+  # ---------------------------------------------------------------------------
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    # Run in parallel with the ci job; does not depend on it passing first.
+    # If you want e2e to gate on ci, add `needs: ci` here.
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: discreetly
+          POSTGRES_PASSWORD: discreetly
+          POSTGRES_DB: discreetly
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U discreetly"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The e2e harness (global-setup.ts) creates the `discreetly_e2e` database
+      # and runs `prisma migrate deploy` against it; the CI .env only needs to
+      # provide enough config for the harness's pg admin connection + the API
+      # process the harness spawns. The harness itself sets DATABASE_URL to the
+      # e2e URL before spawning the API.
+      - name: Write CI .env
+        run: |
+          cat > .env <<'EOF'
+          DATABASE_URL="postgresql://discreetly:discreetly@localhost:5432/discreetly?schema=public"
+          REDIS_URL="redis://localhost:6379"
+          MINISTER_ISSUER="http://localhost:19999"
+          MINISTER_JWKS_URL="http://localhost:19999/.well-known/jwks.json"
+          MINISTER_VC_ISSUER="did:web:ci.test.invalid"
+          MINISTER_CLIENT_ID="ci_test_client"
+          API_PORT="3002"
+          ALLOWED_WS_ORIGINS="http://localhost:3001,http://localhost:3397"
+          EOF
+
+      # Install Chromium and its system dependencies for Playwright.
+      - name: Install Playwright Chromium
+        run: pnpm --filter @discreetly/web exec playwright install --with-deps chromium
+
+      # Run the Playwright suite. The harness: creates discreetly_e2e DB,
+      # applies migrations, builds the web app, starts mock OIDC (3399) + API
+      # (3398) + web (3397), then tears them down after all specs complete.
+      - name: Run Playwright tests
+        run: pnpm --filter @discreetly/web exec playwright test
+
+      # Upload the HTML report on failure so it can be inspected.
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7

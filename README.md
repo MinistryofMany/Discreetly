@@ -204,6 +204,26 @@ were dropped; the legacy code is archived.
 
 ---
 
+## Scaling and no-lock-in
+
+The API is stateless: all mutable state lives in Postgres and Redis. This means
+horizontal scaling is straightforward:
+
+- **Multiple API instances** behind a load balancer work without sticky sessions.
+  Redis pub/sub fans out room broadcasts across every instance, so a message
+  published by one API node reaches subscribers on all others.
+- **Postgres connection pooling** - run PgBouncer or Supabase's Supavisor in
+  transaction mode in front of Postgres when connection count becomes a
+  bottleneck. No Prisma Accelerate or proprietary pooling layer is needed.
+- **Message table growth** - partition the `Message` table by `roomId` (or by
+  `createdAt` buckets) using standard Postgres declarative partitioning. The
+  Prisma schema requires no changes; migrations handle the DDL.
+- **No proprietary lock-in** - the stack is standard Postgres (wire protocol),
+  Redis (RESP), and Node. Swap the managed provider (Neon, Railway, Fly, bare
+  metal) without changing application code. All dependencies are OSS.
+
+---
+
 ## Roadmap
 
 The implementation plans are in `docs/superpowers/plans/`. Plans 1-4 cover
