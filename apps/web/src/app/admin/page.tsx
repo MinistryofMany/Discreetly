@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSession } from 'next-auth/react';
 import { toast } from 'sonner';
 import { useTRPC } from '@/lib/trpc';
 import {
@@ -52,12 +53,18 @@ import {
 
 function AdminGate({ children }: { children: React.ReactNode }) {
   const trpc = useTRPC();
+  // whoami forwards the session id_token as a Bearer header. Wait until the
+  // session has loaded so the very first request carries the token (otherwise
+  // an unauthenticated request 401s and, with retry disabled, never recovers).
+  const { status } = useSession();
+  const authenticated = status === 'authenticated';
   const whoami = useQuery({
     ...trpc.admin.whoami.queryOptions(),
     retry: false,
+    enabled: authenticated,
   });
 
-  if (whoami.isLoading) {
+  if (status === 'loading' || (authenticated && (whoami.isLoading || whoami.isPending))) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
         <span className="text-sm text-muted-foreground">Checking admin access...</span>
@@ -65,7 +72,7 @@ function AdminGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (whoami.isError || !whoami.data) {
+  if (!authenticated || whoami.isError || !whoami.data) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
         <p className="text-sm text-destructive">Not authorized.</p>
@@ -830,13 +837,16 @@ function AuditTab() {
   const roomsQ = useQuery(trpc.admin.room.list.queryOptions());
   const rooms = asAdminRooms(roomsQ.data ?? []);
 
-  const [filterRoom, setFilterRoom] = React.useState('');
+  // Radix Select forbids an empty-string item value, so "all rooms" uses a
+  // sentinel that maps back to no room filter.
+  const ALL_ROOMS = '__all__';
+  const [filterRoom, setFilterRoom] = React.useState(ALL_ROOMS);
   const [filterActor, setFilterActor] = React.useState('');
   const [filterAction, setFilterAction] = React.useState('');
   const [limit, setLimit] = React.useState('100');
 
   const auditInput = {
-    roomId: filterRoom || undefined,
+    roomId: filterRoom === ALL_ROOMS ? undefined : filterRoom || undefined,
     actor: filterActor.trim() || undefined,
     action: filterAction.trim() || undefined,
     limit: Math.min(500, Math.max(1, Number(limit) || 100)),
@@ -867,7 +877,7 @@ function AuditTab() {
               <SelectValue placeholder="All rooms" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">All rooms</SelectItem>
+              <SelectItem value={ALL_ROOMS}>All rooms</SelectItem>
               {rooms.map((r) => (
                 <SelectItem key={r.id} value={r.id}>
                   {r.name}
