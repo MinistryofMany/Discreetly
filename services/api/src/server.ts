@@ -25,6 +25,40 @@ const config = getConfig();
 const { API_PORT, RATE_LIMIT_WINDOW_MS, RATE_LIMIT_MAX, RATE_LIMIT_MUTATION_MAX, TRUST_PROXY } =
   config;
 
+/**
+ * Browser origins allowed for both WS connections and HTTP CORS. A request with
+ * no Origin header is a non-browser client (curl, server-to-server, tests) and
+ * is allowed; a present-but-not-allowlisted Origin is refused (no ACAO echoed).
+ */
+const allowedOrigins = (
+  process.env.ALLOWED_WS_ORIGINS ?? 'http://localhost:3000,http://localhost:5173'
+)
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+function isOriginAllowed(origin: string | undefined): boolean {
+  return !!origin && allowedOrigins.includes(origin);
+}
+
+/**
+ * Apply CORS headers reflecting the allowlist. If the Origin is allowlisted,
+ * echo it (with `Vary: Origin` so caches key on it). If there is no Origin
+ * header, allow the request without setting ACAO (non-browser client). If an
+ * Origin is present but not allowlisted, set no ACAO so the browser blocks the
+ * cross-origin read.
+ */
+function applyCors(req: IncomingMessage, res: ServerResponse): void {
+  const originHeader = req.headers.origin;
+  const origin = Array.isArray(originHeader) ? originHeader[0] : originHeader;
+  res.setHeader('Vary', 'Origin');
+  if (isOriginAllowed(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin!);
+  }
+  res.setHeader('Access-Control-Allow-Headers', 'content-type, authorization');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+}
+
 /** Extract the token from an `Authorization: Bearer <token>` header value. */
 function bearer(headerValue?: string | string[]): string | undefined {
   if (!headerValue) return undefined;
@@ -42,6 +76,9 @@ function bearer(headerValue?: string | string[]): string | undefined {
  */
 function clientIp(req: IncomingMessage): string {
   if (TRUST_PROXY) {
+    // SECURITY: TRUST_PROXY=true is only safe behind a front proxy that strips
+    // or overwrites any client-supplied X-Forwarded-For. Without that, the
+    // leftmost entry is attacker-spoofable and defeats per-IP rate limiting.
     const xff = req.headers['x-forwarded-for'];
     const value = Array.isArray(xff) ? xff[0] : xff;
     const first = value?.split(',')[0]?.trim();
@@ -78,9 +115,7 @@ const httpServer = createHTTPServer({
       return;
     }
 
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Headers', 'content-type, authorization');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    applyCors(req, res);
     // Short-circuit preflight BEFORE rate limiting so OPTIONS is never limited.
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
@@ -117,12 +152,6 @@ const httpServer = createHTTPServer({
   }),
 });
 
-const allowedOrigins = (
-  process.env.ALLOWED_WS_ORIGINS ?? 'http://localhost:3000,http://localhost:5173'
-)
-  .split(',')
-  .map((o) => o.trim())
-  .filter(Boolean);
 // Concurrent WS connections per IP (in-memory; WS conns are sticky to one
 // instance, so per-instance counting is correct for a connection cap).
 const wsConnsByIp = new Map<string, number>();
@@ -132,7 +161,7 @@ const wss = new WebSocketServer({
   verifyClient: (info, cb) => {
     const origin = info.origin;
     // No Origin = non-browser client (allowed). Browser origins must be allowlisted.
-    if (origin && !allowedOrigins.includes(origin)) {
+    if (origin && !isOriginAllowed(origin)) {
       cb(false, 403, 'Forbidden origin');
       return;
     }

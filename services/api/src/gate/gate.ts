@@ -1,4 +1,4 @@
-import { evaluate, type PolicyNode } from '@discreetly/policy';
+import { evaluate, parsePolicy, type PolicyNode } from '@discreetly/policy';
 import type { VerifiedIdentity } from '../minister/verify.js';
 import { joinNullifier } from './join-nullifier.js';
 
@@ -22,7 +22,11 @@ export async function evaluateGate(input: GateInput): Promise<GateResult> {
   const now = input.now ?? Math.floor(Date.now() / 1000);
   let allowed = false;
   try {
-    allowed = evaluate(input.policy, badges, now) === true;
+    // Defense-in-depth: re-parse the stored policy before evaluating so a
+    // tampered or legacy DB row fails closed via schema validation, not only
+    // via evaluate's runtime throw.
+    const policy = parsePolicy(input.policy);
+    allowed = evaluate(policy, badges, now) === true;
   } catch {
     // malformed/unrecognized policy => fail closed (deny)
     allowed = false;
