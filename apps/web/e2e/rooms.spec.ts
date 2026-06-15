@@ -1,11 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import {
-  signIn,
-  createIdentity,
-  resetData,
-  getPrisma,
-  unique,
-} from './harness/helpers.js';
+import { signIn, createIdentity, resetData, getPrisma, unique } from './harness/helpers.js';
 
 const ID_PASSWORD = 'test-password-123';
 
@@ -13,11 +7,7 @@ test.beforeAll(async () => {
   await resetData();
 });
 
-async function createRoom(opts: {
-  name: string;
-  slug: string;
-  accessPolicy?: unknown;
-}) {
+async function createRoom(opts: { name: string; slug: string; accessPolicy?: unknown }) {
   const db = getPrisma();
   return db.room.create({
     data: {

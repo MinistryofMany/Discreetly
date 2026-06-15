@@ -10,16 +10,12 @@ test.describe('identity panel', () => {
     await page.getByLabel('Password').fill(PASSWORD);
     await page.getByRole('button', { name: /^create identity$/i }).click();
     await expect(page.getByText('Unlocked', { exact: true })).toBeVisible();
-    const commitment = await page
-      .locator('text=commitment:')
-      .innerText();
+    const commitment = await page.locator('text=commitment:').innerText();
     expect(commitment).toMatch(/commitment: \d+/);
 
     // Lock -> stored, locked state.
     await page.getByRole('button', { name: /^lock$/i }).click();
-    await expect(
-      page.getByText(/an encrypted identity is stored on this device/i),
-    ).toBeVisible();
+    await expect(page.getByText(/an encrypted identity is stored on this device/i)).toBeVisible();
 
     // Wrong password is rejected (sonner toast, stays locked).
     await page.getByLabel('Password').fill('wrong-password');

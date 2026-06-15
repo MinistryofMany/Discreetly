@@ -28,7 +28,10 @@ export interface SignInOptions {
  */
 export async function signIn(page: Page, opts: SignInOptions): Promise<string> {
   await page.goto('/');
-  await page.getByRole('button', { name: /sign in with minister/i }).first().click();
+  await page
+    .getByRole('button', { name: /sign in with minister/i })
+    .first()
+    .click();
 
   // Mock consent page.
   await page.waitForURL(/\/oidc\/authorize/, { timeout: 30_000 });
