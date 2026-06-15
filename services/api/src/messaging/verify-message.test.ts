@@ -33,6 +33,19 @@ describe('verifyMessage', () => {
     expect(res).toMatchObject({ ok: false, reason: 'bad-signal' });
   });
 
+  it('returns bad-proof (does not throw) on a malformed proof envelope', async () => {
+    const ctx = makeProofCtx();
+    const res = await verifyMessage({
+      rlnIdentifier: ctx.rlnIdentifier,
+      // Empty object: no epoch / snarkProof.publicSignals.
+      proof: {} as never,
+      content: 'hi',
+      leaves: ctx.leaves,
+      currentEpoch: 42n,
+    });
+    expect(res).toMatchObject({ ok: false, reason: 'bad-proof' });
+  });
+
   it('rejects an out-of-window epoch', async () => {
     const ctx = makeProofCtx();
     const proof = await proofFor(ctx, 'hi', 42n);

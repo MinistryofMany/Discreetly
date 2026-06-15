@@ -15,11 +15,17 @@ import { Textarea } from '@/components/ui/textarea';
 import { Send } from '@/components/icons';
 
 interface SendOutcome {
-  status: string;
+  status?: string;
+  ok?: boolean;
   reason?: string;
 }
 
 function describeSend(result: SendOutcome): { ok: boolean; message: string } {
+  // Typed bad-proof failure carries `{ ok: false, reason: 'bad-proof' }` with no
+  // `status` field.
+  if (result.ok === false && result.reason === 'bad-proof') {
+    return { ok: false, message: 'Rejected: invalid proof' };
+  }
   switch (result.status) {
     case 'sent':
       return { ok: true, message: 'Message sent.' };
@@ -28,8 +34,7 @@ function describeSend(result: SendOutcome): { ok: boolean; message: string } {
     case 'banned':
       return {
         ok: false,
-        message:
-          'You have been banned in this room (rate-limit collision detected).',
+        message: 'You have been banned in this room (rate-limit collision detected).',
       };
     case 'rejected':
       return { ok: false, message: `Rejected: ${result.reason ?? 'invalid proof'}` };
@@ -58,10 +63,7 @@ export function MessageComposer({
   const sendMutation = useMutation(trpc.message.send.mutationOptions());
 
   // Rate-limit preview: how many message slots remain for the current epoch.
-  const epoch = React.useMemo(
-    () => currentEpoch(room.rateLimit),
-    [room.rateLimit],
-  );
+  const epoch = React.useMemo(() => currentEpoch(room.rateLimit), [room.rateLimit]);
   const userMessageLimit = BigInt(room.userMessageLimit);
 
   const aesRequired = room.encryption === 'AES';
@@ -113,9 +115,7 @@ export function MessageComposer({
 
       // Serialize bigints -> strings so the proof survives JSON transport.
       const proofJson = JSON.parse(
-        JSON.stringify(proof, (_k, v) =>
-          typeof v === 'bigint' ? v.toString() : v,
-        ),
+        JSON.stringify(proof, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)),
       );
 
       const result = (await sendMutation.mutateAsync({
