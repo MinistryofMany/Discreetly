@@ -193,11 +193,15 @@ dev stack.
 proof server-side. A clean seam is preserved for a future unlinkable ZK gate
 (see the Tessera gating design spec).
 
-**Known gap - ephemeral rooms:** `RoomPersistence.EPHEMERAL` exists in the
-schema and `message.list` returns `[]` for ephemeral rooms, but the send
-pipeline (`services/api/src/messaging/pipeline.ts`) currently persists all
-messages to Postgres regardless of persistence type. A true in-memory ephemeral
-store is not yet implemented.
+**Ephemeral rooms:** `RoomPersistence.EPHEMERAL` rooms are a pure transport
+relay. The send pipeline (`services/api/src/messaging/pipeline.ts`) verifies the
+RLN proof, fans the message out over Redis pub/sub to whoever is subscribed at
+that moment, and forgets it - no `Message` row is ever written, and `message.list`
+returns `[]` so there is no history backfill. RLN rate-limiting/bans still work
+via a transient, auto-expiring Redis record holding only the per-epoch nullifier
+share point (`x:y`, never content); see
+`services/api/src/messaging/ephemeral-collision.ts`. Bans (membership state)
+still persist. PERSISTENT rooms are unchanged.
 
 **IDC nullifier:** Not used in v2. The gateway/set-password flows it served
 were dropped; the legacy code is archived.

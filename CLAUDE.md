@@ -249,12 +249,15 @@ silently.
 imported by `apps/web/src/lib/broadcast-types.ts` - same "break not drift"
 guarantee.
 
-**Ephemeral rooms:** `RoomPersistence.EPHEMERAL` exists in the enum and
-`message.list` returns `[]` for ephemeral rooms. However,
-`services/api/src/messaging/pipeline.ts` (`sendMessage`) always calls
-`prisma.message.create()` regardless of persistence type - a true in-memory
-ephemeral store is not yet implemented. This is intentional deferred work, not
-an oversight.
+**Ephemeral rooms:** `RoomPersistence.EPHEMERAL` rooms are transport-only.
+`sendMessage` (`services/api/src/messaging/pipeline.ts`) branches on
+`room.persistence`: for EPHEMERAL it verifies the proof, runs an atomic
+transient collision check (`ephemeral-collision.ts`), then `publishMessage()`s
+over Redis and returns - it never calls `prisma.message.create()`. The
+collision store is a per-epoch Redis key `eph:nul:<roomId>:<epoch>:<nullifier>`
+= `"<x>:<y>"` set with `PX = rateLimit * 4` via a single GET-or-SET Lua script
+(race-free). `message.list` returns `[]` for EPHEMERAL, so late joiners get no
+backfill. Bans still persist through the shared `handleCollision` path.
 
 **IDC nullifier:** Not used in v2. The legacy gateway/set-password flows it
 served were dropped. The `idc-nullifier` package and its `idcNullifier/` and
