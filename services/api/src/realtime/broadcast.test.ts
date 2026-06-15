@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import Redis from 'ioredis';
 import { getConfig } from '../config.js';
-import { roomMessages, publishMessage, type BroadcastMessage } from './broadcast.js';
+import {
+  roomMessages,
+  publishMessage,
+  type ChatBroadcast,
+  type RoomBroadcast,
+} from './broadcast.js';
 import { roomChannel } from './redis.js';
 
 /**
@@ -20,7 +25,7 @@ describe('roomMessages', () => {
     const gen = roomMessages(roomId, ac.signal);
 
     // Collect yielded messages in the background
-    const received: BroadcastMessage[] = [];
+    const received: RoomBroadcast[] = [];
     const collecting = (async () => {
       for await (const msg of gen) {
         received.push(msg);
@@ -34,7 +39,8 @@ describe('roomMessages', () => {
     const pub = new Redis(getConfig().REDIS_URL);
     const channel = roomChannel(roomId);
 
-    const makeMsg = (n: number): BroadcastMessage => ({
+    const makeMsg = (n: number): ChatBroadcast => ({
+      kind: 'message',
       id: `m${n}`,
       roomId,
       epoch: String(n),
@@ -61,7 +67,13 @@ describe('roomMessages', () => {
 
     // Exactly 5 valid messages; the malformed one was silently dropped
     expect(received).toHaveLength(5);
-    expect(received.map((m) => m.id)).toEqual(['m1', 'm2', 'm3', 'm4', 'm5']);
+    expect(received.map((m) => (m.kind === 'message' ? m.id : undefined))).toEqual([
+      'm1',
+      'm2',
+      'm3',
+      'm4',
+      'm5',
+    ]);
   });
 
   it('completes cleanly after abort with no lingering listeners', async () => {
@@ -69,7 +81,7 @@ describe('roomMessages', () => {
     const ac = new AbortController();
 
     const gen = roomMessages(roomId, ac.signal);
-    const received: BroadcastMessage[] = [];
+    const received: RoomBroadcast[] = [];
 
     const collecting = (async () => {
       for await (const msg of gen) {

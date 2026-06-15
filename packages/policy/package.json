@@ -13,6 +13,9 @@
     "lint": "echo \"(no lint configured)\"",
     "test": "vitest run"
   },
+  "dependencies": {
+    "zod": "^3.24.1"
+  },
   "devDependencies": {
     "typescript": "^5.6.3",
     "vitest": "^2.1.8"
