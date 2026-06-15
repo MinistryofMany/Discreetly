@@ -12,7 +12,7 @@ export const membershipRouter = router({
         roomId: z.string(),
         idToken: z.string(),
         identityCommitment: z.string(),
-        deviceLabel: z.string().optional(),
+        deviceLabel: z.string().max(100).optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {

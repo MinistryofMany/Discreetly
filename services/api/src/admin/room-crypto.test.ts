@@ -126,6 +126,21 @@ describe('admin room CRUD', () => {
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
+  it('rejects an AES room with a too-short password (< 12 chars)', async () => {
+    const caller = await adminCaller();
+    await expect(
+      caller.admin.room.create({
+        name: 'AES Short Password',
+        slug: uniqueSlug('aes-short-pw'),
+        rateLimit: 1000,
+        userMessageLimit: 3,
+        encryption: 'AES',
+        password: 'short',
+        accessPolicy: OPEN_POLICY,
+      }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+  });
+
   it('rejects AES room without a password', async () => {
     const caller = await adminCaller();
     await expect(
