@@ -7,14 +7,12 @@ import {
   jwks,
   signIdToken,
   MOCK_ISSUER,
-  MOCK_VC_ISSUER,
   MOCK_CLIENT_ID,
 } from '../test/mock-issuer.js';
 
 const mockVerifier = makeVerifier({
   issuer: MOCK_ISSUER,
   audience: MOCK_CLIENT_ID,
-  vcIssuer: MOCK_VC_ISSUER,
   jwks: createLocalJWKSet(await jwks()),
 });
 
