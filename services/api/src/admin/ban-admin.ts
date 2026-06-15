@@ -1,10 +1,63 @@
-import { prisma, BanReason, MembershipStatus } from '@discreetly/db';
+import { prisma, BanReason, MembershipStatus, type Prisma } from '@discreetly/db';
 import { getRateCommitmentHash } from '@discreetly/crypto';
 import { audit } from './audit.js';
 
-export type AdminBanOutcome =
+export type BanByLeafOutcome =
   | { banned: true; joinNullifier: string; prunedLeaves: number }
   | { banned: false; reason: 'no-leaf' };
+
+export interface BanMembershipByLeafInput {
+  roomId: string;
+  rateCommitment: string;
+  reason: BanReason;
+  /** Recovered Shamir secret to persist on the Ban row (collision bans only). */
+  shamirSecret?: string;
+}
+
+/**
+ * Shared ban-by-leaf transaction core: resolve the device leaf via its rate
+ * commitment, ban the owning membership, prune all of its leaves, and record a
+ * Ban row. Returns `no-leaf` when no leaf with that rate commitment exists in
+ * the room. Callers add any audit row in the same transaction (they own the
+ * actor + metadata).
+ */
+export async function banMembershipByLeaf(
+  tx: Prisma.TransactionClient,
+  input: BanMembershipByLeafInput,
+): Promise<BanByLeafOutcome> {
+  const leaf = await tx.membershipLeaf.findUnique({
+    where: {
+      roomId_rateCommitment: { roomId: input.roomId, rateCommitment: input.rateCommitment },
+    },
+    select: { membershipId: true },
+  });
+  if (!leaf) return { banned: false as const, reason: 'no-leaf' as const };
+
+  const membership = await tx.membership.update({
+    where: { id: leaf.membershipId },
+    data: { status: MembershipStatus.BANNED },
+    select: { joinNullifier: true },
+  });
+  const pruned = await tx.membershipLeaf.deleteMany({
+    where: { membershipId: leaf.membershipId },
+  });
+  await tx.ban.create({
+    data: {
+      roomId: input.roomId,
+      joinNullifier: membership.joinNullifier,
+      rateCommitment: input.rateCommitment,
+      reason: input.reason,
+      ...(input.shamirSecret !== undefined && { shamirSecret: input.shamirSecret }),
+    },
+  });
+  return {
+    banned: true as const,
+    joinNullifier: membership.joinNullifier,
+    prunedLeaves: pruned.count,
+  };
+}
+
+export type AdminBanOutcome = BanByLeafOutcome;
 
 export interface BanByJoinNullifierInput {
   roomId: string;
@@ -84,42 +137,22 @@ export async function banByIdentityCommitment(
   ).toString();
 
   return prisma.$transaction(async (tx) => {
-    const leaf = await tx.membershipLeaf.findUnique({
-      where: { roomId_rateCommitment: { roomId: input.roomId, rateCommitment } },
-      select: { membershipId: true },
+    const outcome = await banMembershipByLeaf(tx, {
+      roomId: input.roomId,
+      rateCommitment,
+      reason: BanReason.ADMIN,
     });
-    if (!leaf) return { banned: false as const, reason: 'no-leaf' as const };
-
-    const membership = await tx.membership.update({
-      where: { id: leaf.membershipId },
-      data: { status: MembershipStatus.BANNED },
-      select: { joinNullifier: true },
-    });
-    const pruned = await tx.membershipLeaf.deleteMany({
-      where: { membershipId: leaf.membershipId },
-    });
-    await tx.ban.create({
-      data: {
-        roomId: input.roomId,
-        joinNullifier: membership.joinNullifier,
-        rateCommitment,
-        reason: BanReason.ADMIN,
-      },
-    });
+    if (!outcome.banned) return outcome;
     await audit(
       {
         actor: input.actor,
         action: 'ADMIN_BAN_IC',
         target: input.roomId,
-        metadata: { joinNullifier: membership.joinNullifier, rateCommitment },
+        metadata: { joinNullifier: outcome.joinNullifier, rateCommitment },
       },
       tx,
     );
-    return {
-      banned: true as const,
-      joinNullifier: membership.joinNullifier,
-      prunedLeaves: pruned.count,
-    };
+    return outcome;
   });
 }
 
