@@ -105,9 +105,22 @@ test('device-limit: a second device join is refused when maxDevices is 1', async
   await enterAndJoin(page, room.id);
   await expect.poll(() => db.membershipLeaf.count({ where: { roomId: room.id } })).toBe(1);
 
-  // Create a SECOND local identity (overwrites the stored one) for the SAME
-  // signed-in user, then return to the room and unlock it.
+  // Provision a SECOND local device identity for the SAME signed-in user. The
+  // identity panel only exposes "Remove from device" once unlocked, so unlock
+  // first, remove (auto-accepting the confirm), then create a fresh identity.
+  // The Minister sub is unchanged, so it maps to the same membership.
+  await page.goto('/identity');
+  await page.getByLabel('Password', { exact: true }).fill(ID_PASSWORD);
+  await page.getByRole('button', { name: /^unlock$/i }).click();
+  await expect(page.getByText(/^Unlocked$/)).toBeVisible({ timeout: 15_000 });
+  page.once('dialog', (d) => void d.accept());
+  await page.getByRole('button', { name: /remove from device/i }).click();
+  await expect(page.getByRole('button', { name: /^create identity$/i })).toBeVisible({
+    timeout: 15_000,
+  });
   await createIdentity(page, ID_PASSWORD);
+
+  // Return to the room and unlock the new device identity.
   await page.goto(`/rooms/${room.id}`);
   await unlockInRoom(page);
 
