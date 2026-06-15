@@ -1,0 +1,10 @@
+# Next.js
+/.next/
+/out/
+
+# Circuit artifacts copied in by predev/prebuild (source of truth: packages/circuits)
+/public/circuits/
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
