@@ -23,8 +23,12 @@ const httpServer = createHTTPServer({
   createContext: () => ({ verify: getProductionVerifier() }),
 });
 
-const allowedOrigins = (process.env.ALLOWED_WS_ORIGINS ?? 'http://localhost:3000,http://localhost:5173')
-  .split(',').map((o) => o.trim()).filter(Boolean);
+const allowedOrigins = (
+  process.env.ALLOWED_WS_ORIGINS ?? 'http://localhost:3000,http://localhost:5173'
+)
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
 const wss = new WebSocketServer({
   server: httpServer,
   verifyClient: (info, cb) => {
