@@ -3,9 +3,44 @@ import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+// Derive the API origins (http + ws) the browser is allowed to connect to, so
+// the CSP connect-src can be locked down instead of using a wildcard.
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3002';
+const API_WS_URL = process.env.NEXT_PUBLIC_API_WS_URL ?? 'ws://localhost:3002';
+
+/**
+ * Content-Security-Policy. connect-src is restricted to self + the API. Scripts
+ * need 'unsafe-inline' (Next injects an inline bootstrap) and 'unsafe-eval' /
+ * 'wasm-unsafe-eval' (rlnjs compiles the RLN circuit wasm in the browser).
+ * img-src allows data: for the identicon data URIs.
+ */
+const csp = [
+  `default-src 'self'`,
+  `connect-src 'self' ${API_URL} ${API_WS_URL}`,
+  `img-src 'self' data:`,
+  `script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'`,
+  `style-src 'self' 'unsafe-inline'`,
+  `font-src 'self' data:`,
+  `base-uri 'self'`,
+  `form-action 'self'`,
+  `frame-ancestors 'none'`,
+]
+  .join('; ')
+  .concat(';');
+
+const securityHeaders = [
+  { key: 'Referrer-Policy', value: 'no-referrer' },
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+  { key: 'X-Frame-Options', value: 'DENY' },
+  { key: 'Content-Security-Policy', value: csp },
+];
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  async headers() {
+    return [{ source: '/:path*', headers: securityHeaders }];
+  },
   // Workspace packages ship TS source (their `main` points at ./src/*.ts and
   // they have no build step), so Next must transpile them itself.
   transpilePackages: [
