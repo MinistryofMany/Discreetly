@@ -49,6 +49,52 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
+// ---- Shared admin mutation helper -------------------------------------------
+
+/**
+ * Wrap an admin mutation so every call invalidates the membership list, toasts a
+ * success message, and surfaces failures uniformly. Returns a `run` that awaits
+ * the mutation and a `busy` flag keyed to the in-flight call.
+ *
+ * `mutationOptions` is the object returned by a tRPC `*.mutationOptions()` call.
+ * The input type is inferred from the options' `mutationFn`; the result/error
+ * types are irrelevant to the caller, so the options are accepted as-is.
+ */
+function useAdminMutation<
+  TOptions extends { mutationFn?: (input: never, ...rest: never[]) => Promise<unknown> },
+>(mutationOptions: TOptions, successMsg: string) {
+  type TInput = TOptions extends {
+    mutationFn?: (input: infer I, ...rest: never[]) => Promise<unknown>;
+  }
+    ? I
+    : never;
+  const queryClient = useQueryClient();
+  // The options carry their own precise error/result types; the helper only
+  // needs `mutateAsync(input)`, so cast through the loosely-typed mutate fn.
+  const mutation = useMutation(mutationOptions as Parameters<typeof useMutation>[0]);
+  const [busy, setBusy] = React.useState(false);
+
+  const run = React.useCallback(
+    async (input: TInput): Promise<boolean> => {
+      setBusy(true);
+      try {
+        await (mutation.mutateAsync as (i: TInput) => Promise<unknown>)(input);
+        void queryClient.invalidateQueries({ queryKey: [['admin', 'room', 'memberships']] });
+        toast.success(successMsg);
+        return true;
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Action failed');
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [mutation, queryClient, successMsg],
+  );
+
+  return { run, busy };
+}
+
 // ---- Auth gate ---------------------------------------------------------------
 
 function AdminGate({ children }: { children: React.ReactNode }) {
@@ -117,30 +163,36 @@ function makeDefaultRoomForm(): RoomFormState {
   };
 }
 
-function roomToFormState(room: AdminRoom): RoomFormState {
+function roomToFormState(room: AdminRoom): { form: RoomFormState; policyParseError: boolean } {
   let policyRoot: PolicyBuilderNode = makeOpenPolicy();
   let openPolicy = true;
+  let policyParseError = false;
   try {
     policyRoot = deserializeNode(room.accessPolicy as unknown as never);
     openPolicy =
       policyRoot.kind === 'allOf' && (policyRoot as { children: unknown[] }).children.length === 0;
   } catch {
-    // fallback to open
+    // The stored policy could not be parsed into the builder tree. Do NOT silently
+    // present it as "open" - that would loosen the room to admit-all on save.
+    policyParseError = true;
   }
 
   return {
-    name: room.name,
-    slug: room.slug,
-    description: room.description ?? '',
-    rateLimit: String(room.rateLimit),
-    userMessageLimit: String(room.userMessageLimit),
-    maxDevices: String(room.maxDevices),
-    visibility: room.visibility,
-    persistence: room.persistence,
-    encryption: room.encryption,
-    password: '',
-    policyRoot,
-    openPolicy,
+    form: {
+      name: room.name,
+      slug: room.slug,
+      description: room.description ?? '',
+      rateLimit: String(room.rateLimit),
+      userMessageLimit: String(room.userMessageLimit),
+      maxDevices: String(room.maxDevices),
+      visibility: room.visibility,
+      persistence: room.persistence,
+      encryption: room.encryption,
+      password: '',
+      policyRoot,
+      openPolicy,
+    },
+    policyParseError,
   };
 }
 
@@ -158,11 +210,24 @@ function RoomDialog({ open, onClose, editRoom }: RoomDialogProps) {
 
   const [form, setForm] = React.useState<RoomFormState>(makeDefaultRoomForm);
   const [policyError, setPolicyError] = React.useState<string | null>(null);
+  const [policyParseError, setPolicyParseError] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
     if (open) {
-      setForm(editRoom ? roomToFormState(editRoom) : makeDefaultRoomForm());
+      if (editRoom) {
+        const { form: nextForm, policyParseError: parseError } = roomToFormState(editRoom);
+        setForm(nextForm);
+        setPolicyParseError(parseError);
+        if (parseError) {
+          toast.error(
+            'This room has a stored access policy that could not be parsed. Edit it in the builder before saving, or the room will not be loosened automatically.',
+          );
+        }
+      } else {
+        setForm(makeDefaultRoomForm());
+        setPolicyParseError(false);
+      }
       setPolicyError(null);
     }
   }, [open, editRoom]);
@@ -181,6 +246,14 @@ function RoomDialog({ open, onClose, editRoom }: RoomDialogProps) {
 
     let accessPolicy: unknown;
     if (form.openPolicy) {
+      // Guard against silently loosening a room whose stored policy failed to
+      // parse: refuse to write an open policy unless the admin opted in.
+      if (policyParseError) {
+        setPolicyError(
+          'The existing policy could not be parsed. Switch to "Build custom policy" and define one explicitly, or confirm you intend to open this room.',
+        );
+        return;
+      }
       accessPolicy = { allOf: [] };
     } else {
       const result = buildAndValidate(form.policyRoot);
@@ -358,11 +431,23 @@ function RoomDialog({ open, onClose, editRoom }: RoomDialogProps) {
               <button
                 type="button"
                 className="text-xs text-primary underline"
-                onClick={() => field('openPolicy', !form.openPolicy)}
+                onClick={() => {
+                  // Building a custom policy clears the unparsed-policy guard.
+                  if (form.openPolicy) setPolicyParseError(false);
+                  field('openPolicy', !form.openPolicy);
+                }}
               >
                 {form.openPolicy ? 'Build custom policy' : 'Use open policy (admit all)'}
               </button>
             </div>
+
+            {policyParseError && (
+              <p className="mb-2 rounded border border-amber-500/50 bg-amber-500/10 p-2 text-xs text-amber-700">
+                The stored access policy for this room could not be parsed into the
+                builder. Saving with the open policy would loosen the room. Build a
+                policy explicitly to continue.
+              </p>
+            )}
 
             {form.openPolicy ? (
               <p className="text-xs text-muted-foreground">
@@ -541,7 +626,6 @@ function RoomsTab() {
 
 function BansTab() {
   const trpc = useTRPC();
-  const queryClient = useQueryClient();
   const roomsQ = useQuery(trpc.admin.room.list.queryOptions());
   const rooms = asAdminRooms(roomsQ.data ?? []);
 
@@ -549,56 +633,38 @@ function BansTab() {
   const [icValue, setIcValue] = React.useState('');
   const [jnValue, setJnValue] = React.useState('');
   const [unbanJn, setUnbanJn] = React.useState('');
-  const [busyIc, setBusyIc] = React.useState(false);
-  const [busyJn, setBusyJn] = React.useState(false);
-  const [busyUnban, setBusyUnban] = React.useState(false);
 
-  const banByIcMut = useMutation(trpc.admin.banByIdentityCommitment.mutationOptions());
-  const banByJnMut = useMutation(trpc.admin.banByJoinNullifier.mutationOptions());
-  const unbanMut = useMutation(trpc.admin.unban.mutationOptions());
+  const banIc = useAdminMutation(
+    trpc.admin.banByIdentityCommitment.mutationOptions(),
+    'Banned by identity commitment',
+  );
+  const banJn = useAdminMutation(
+    trpc.admin.banByJoinNullifier.mutationOptions(),
+    'Banned by join nullifier',
+  );
+  const unban = useAdminMutation(trpc.admin.unban.mutationOptions(), 'Unbanned');
+  const busyIc = banIc.busy;
+  const busyJn = banJn.busy;
+  const busyUnban = unban.busy;
 
   async function handleBanIc() {
     if (!selectedRoom || !icValue.trim()) return;
-    setBusyIc(true);
-    try {
-      await banByIcMut.mutateAsync({ roomId: selectedRoom, identityCommitment: icValue.trim() });
-      void queryClient.invalidateQueries({ queryKey: [['admin', 'room', 'memberships']] });
-      toast.success('Banned by identity commitment');
+    if (await banIc.run({ roomId: selectedRoom, identityCommitment: icValue.trim() })) {
       setIcValue('');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ban failed');
-    } finally {
-      setBusyIc(false);
     }
   }
 
   async function handleBanJn() {
     if (!selectedRoom || !jnValue.trim()) return;
-    setBusyJn(true);
-    try {
-      await banByJnMut.mutateAsync({ roomId: selectedRoom, joinNullifier: jnValue.trim() });
-      void queryClient.invalidateQueries({ queryKey: [['admin', 'room', 'memberships']] });
-      toast.success('Banned by join nullifier');
+    if (await banJn.run({ roomId: selectedRoom, joinNullifier: jnValue.trim() })) {
       setJnValue('');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ban failed');
-    } finally {
-      setBusyJn(false);
     }
   }
 
   async function handleUnban() {
     if (!selectedRoom || !unbanJn.trim()) return;
-    setBusyUnban(true);
-    try {
-      await unbanMut.mutateAsync({ roomId: selectedRoom, joinNullifier: unbanJn.trim() });
-      void queryClient.invalidateQueries({ queryKey: [['admin', 'room', 'memberships']] });
-      toast.success('Unbanned');
+    if (await unban.run({ roomId: selectedRoom, joinNullifier: unbanJn.trim() })) {
       setUnbanJn('');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Unban failed');
-    } finally {
-      setBusyUnban(false);
     }
   }
 
@@ -694,12 +760,12 @@ function BansTab() {
 
 function MembersTab() {
   const trpc = useTRPC();
-  const queryClient = useQueryClient();
   const roomsQ = useQuery(trpc.admin.room.list.queryOptions());
   const rooms = asAdminRooms(roomsQ.data ?? []);
 
   const [selectedRoom, setSelectedRoom] = React.useState('');
-  const [banning, setBanning] = React.useState<string | null>(null);
+  // The join nullifier of the row whose action is in flight, for per-row spinners.
+  const [pending, setPending] = React.useState<string | null>(null);
 
   const membershipsQ = useQuery({
     ...trpc.admin.room.memberships.queryOptions({ roomId: selectedRoom }),
@@ -707,20 +773,27 @@ function MembersTab() {
   });
   const memberships = asAdminMemberships(membershipsQ.data ?? []);
 
-  const banMut = useMutation(trpc.admin.banByJoinNullifier.mutationOptions());
+  const banJn = useAdminMutation(
+    trpc.admin.banByJoinNullifier.mutationOptions(),
+    'Member banned',
+  );
+  const unbanJn = useAdminMutation(trpc.admin.unban.mutationOptions(), 'Member unbanned');
 
   async function handleBan(joinNullifier: string) {
-    setBanning(joinNullifier);
+    setPending(joinNullifier);
     try {
-      await banMut.mutateAsync({ roomId: selectedRoom, joinNullifier });
-      void queryClient.invalidateQueries({
-        queryKey: [['admin', 'room', 'memberships']],
-      });
-      toast.success('Member banned');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Ban failed');
+      await banJn.run({ roomId: selectedRoom, joinNullifier });
     } finally {
-      setBanning(null);
+      setPending(null);
+    }
+  }
+
+  async function handleUnban(joinNullifier: string) {
+    setPending(joinNullifier);
+    try {
+      await unbanJn.run({ roomId: selectedRoom, joinNullifier });
+    } finally {
+      setPending(null);
     }
   }
 
@@ -773,15 +846,25 @@ function MembersTab() {
                     jn: {m.joinNullifier}
                   </p>
                 </div>
-                {m.status !== 'BANNED' && (
+                {m.status === 'BANNED' ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 shrink-0 px-2 text-xs"
+                    disabled={pending === m.joinNullifier}
+                    onClick={() => void handleUnban(m.joinNullifier)}
+                  >
+                    {pending === m.joinNullifier ? 'Unbanning...' : 'Unban'}
+                  </Button>
+                ) : (
                   <Button
                     size="sm"
                     variant="ghost"
                     className="h-7 shrink-0 px-2 text-xs text-destructive"
-                    disabled={banning === m.joinNullifier}
+                    disabled={pending === m.joinNullifier}
                     onClick={() => void handleBan(m.joinNullifier)}
                   >
-                    {banning === m.joinNullifier ? 'Banning...' : 'Ban'}
+                    {pending === m.joinNullifier ? 'Banning...' : 'Ban'}
                   </Button>
                 )}
               </div>
@@ -923,8 +1006,17 @@ function AuditTab() {
                 <TableCell className="max-w-[120px] truncate font-mono text-xs text-muted-foreground">
                   {row.target ?? '-'}
                 </TableCell>
-                <TableCell className="max-w-[180px] truncate text-xs text-muted-foreground">
-                  {row.metadata ? JSON.stringify(row.metadata) : '-'}
+                <TableCell className="max-w-[180px] text-xs text-muted-foreground">
+                  {row.metadata ? (
+                    <span
+                      className="block cursor-help truncate"
+                      title={JSON.stringify(row.metadata, null, 2)}
+                    >
+                      {JSON.stringify(row.metadata)}
+                    </span>
+                  ) : (
+                    '-'
+                  )}
                 </TableCell>
               </TableRow>
             ))}
