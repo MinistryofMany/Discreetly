@@ -2,17 +2,17 @@ import { describe, it, expect } from 'vitest';
 import { credentialTypeToBadgeType } from './badge-type.js';
 
 describe('credentialTypeToBadgeType', () => {
-  it('maps Tessera credential types to policy badge types', () => {
+  it('maps Minister credential types to policy badge types', () => {
     expect(
-      credentialTypeToBadgeType(['VerifiableCredential', 'TesseraEmailDomainCredential']),
+      credentialTypeToBadgeType(['VerifiableCredential', 'MinisterEmailDomainCredential']),
     ).toBe('email-domain');
     expect(
-      credentialTypeToBadgeType(['VerifiableCredential', 'TesseraOauthAccountCredential']),
+      credentialTypeToBadgeType(['VerifiableCredential', 'MinisterOauthAccountCredential']),
     ).toBe('oauth-account');
-    expect(credentialTypeToBadgeType(['VerifiableCredential', 'TesseraInviteCodeCredential'])).toBe(
+    expect(credentialTypeToBadgeType(['VerifiableCredential', 'MinisterInviteCodeCredential'])).toBe(
       'invite-code',
     );
-    expect(credentialTypeToBadgeType(['VerifiableCredential', 'TesseraAgeOver21Credential'])).toBe(
+    expect(credentialTypeToBadgeType(['VerifiableCredential', 'MinisterAgeOver21Credential'])).toBe(
       'age-over-21',
     );
   });

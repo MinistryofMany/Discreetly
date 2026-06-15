@@ -31,7 +31,7 @@ export function makeVerifier(deps: VerifierDeps) {
     const sub = payload.sub;
     if (!sub) throw new Error('id_token missing sub');
 
-    const raw = Array.isArray(payload.tessera_badges) ? payload.tessera_badges : [];
+    const raw = Array.isArray(payload.minister_badges) ? payload.minister_badges : [];
     const badges: VerifiedBadge[] = [];
     for (const vcJwt of raw) {
       if (typeof vcJwt !== 'string') throw new Error('non-string badge entry');

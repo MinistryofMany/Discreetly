@@ -1,10 +1,10 @@
-const TESSERA_CRED = /^Tessera(.+)Credential$/;
+const MINISTER_CRED = /^Minister(.+)Credential$/;
 
 /** Map a VC `type` array to the policy badge-type string, or null if unrecognized. */
 export function credentialTypeToBadgeType(vcTypes: readonly string[]): string | null {
   const specific = vcTypes.find((t) => t !== 'VerifiableCredential');
   if (!specific) return null;
-  const m = TESSERA_CRED.exec(specific);
+  const m = MINISTER_CRED.exec(specific);
   if (!m) return null;
   const g = m[1];
   if (!g) return null;
