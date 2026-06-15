@@ -14,6 +14,9 @@ declare global {
 export default async function globalSetup(): Promise<void> {
   await prepareDatabase();
   await disconnectPrisma(); // setup-only connection; specs reopen their own.
+  // E2E_REUSE: assume the harness servers are already running (fast local
+  // iteration). Skips the build + spawn and leaves teardown to the operator.
+  if (process.env.E2E_REUSE === '1') return;
   await buildWeb();
   globalThis.__E2E_SERVERS__ = await startServers();
 }
