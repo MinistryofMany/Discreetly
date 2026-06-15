@@ -57,6 +57,10 @@ export function AesPanel({
           Unlock room
         </Button>
       </div>
+      <p className="text-xs text-muted-foreground">
+        Use a strong, high-entropy passphrase: the encrypted messages are
+        relayed by the server and can be guessed offline if the password is weak.
+      </p>
     </div>
   );
 }

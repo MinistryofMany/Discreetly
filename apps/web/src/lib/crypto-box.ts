@@ -12,7 +12,13 @@
  * key, while a fresh IV per message preserves AES-GCM security.
  */
 
-const PBKDF2_ITERATIONS = 210_000;
+// Room keys are derived rarely (once per unlock), so we can afford a high work
+// factor. The salt is the public `discreetly.room.${roomId}` - inherent to a
+// shared-password room, and salts need not be secret - so the only real defense
+// against an offline dictionary attack on the relayed ciphertext is a
+// high-entropy room password plus a high iteration count. Room passwords MUST be
+// strong: the ciphertext is offline-guessable by anyone who can read the feed.
+const PBKDF2_ITERATIONS = 600_000;
 const PBKDF2_HASH = 'SHA-256';
 const IV_BYTES = 12;
 const AES_KEY_BITS = 256;
