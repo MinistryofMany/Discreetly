@@ -42,9 +42,11 @@ export async function signIn(page: Page, opts: SignInOptions): Promise<string> {
   }
   await page.locator('#approve').click();
 
-  // Back in the app, signed in.
+  // Back in the app, signed in. The header swaps to a "Sign out" control once
+  // authenticated; assert on that rather than landing copy (which intentionally
+  // discloses no identifier).
   await page.waitForURL((url) => !url.pathname.startsWith('/oidc'), { timeout: 30_000 });
-  await expect(page.getByText(/signed in as/i)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('button', { name: /sign out/i })).toBeVisible({ timeout: 30_000 });
   return subFor(opts.email);
 }
 
