@@ -1,4 +1,14 @@
 import { z } from 'zod';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+
+// Load the repo-root .env so the API is self-sufficient no matter how it is
+// launched. Turborepo 2.x defaults to strict env-mode and does not pass the
+// shell environment into tasks, so `pnpm dev` would otherwise start the API
+// with no config. Values already present in process.env take precedence —
+// dotenv never overrides an existing variable.
+dotenv.config({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../../../.env') });
 
 const schema = z.object({
   DATABASE_URL: z.string().url(),

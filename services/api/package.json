@@ -18,6 +18,7 @@
     "@discreetly/shared": "workspace:*",
     "@minister/client": "git+https://github.com/MinistryofMany/minister-client.git#a009051",
     "@trpc/server": "^11.0.0",
+    "dotenv": "^17.4.2",
     "ioredis": "^5.11.1",
     "jose": "^5.9.6",
     "pino": "^10.3.1",
