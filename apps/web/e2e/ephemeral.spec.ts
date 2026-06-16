@@ -27,7 +27,9 @@ async function createEphemeralRoom(name: string, slug: string) {
       name,
       slug,
       rlnIdentifier: String(Date.now()) + String(Math.floor(Math.random() * 1000)),
-      rateLimit: 1000,
+      // Long epoch window so CI's slow browser proving can't roll the epoch over
+      // between proof generation and verification (see chat.spec.ts).
+      rateLimit: 3_600_000,
       userMessageLimit: 100,
       visibility: 'PUBLIC',
       encryption: 'PLAINTEXT',

@@ -35,7 +35,11 @@ async function createRoom(opts: {
       name: opts.name,
       slug: opts.slug,
       rlnIdentifier: String(Date.now()) + String(Math.floor(Math.random() * 1000)),
-      rateLimit: opts.rateLimit ?? 1000,
+      // Long epoch window by default: in CI, browser RLN proving takes several
+      // seconds, so a short (e.g. 1s) window would roll the epoch over between
+      // proof generation and server verification, getting the proof rejected.
+      // Specs that exercise rate limiting set their own value.
+      rateLimit: opts.rateLimit ?? 3_600_000,
       userMessageLimit: opts.userMessageLimit ?? 100,
       visibility: opts.visibility ?? 'PUBLIC',
       encryption: opts.encryption ?? 'PLAINTEXT',

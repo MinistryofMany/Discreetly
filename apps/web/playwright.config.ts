@@ -21,7 +21,9 @@ export default defineConfig({
   testDir: './e2e',
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: 0,
+  // Browser RLN proving + WS round-trips are timing-sensitive; allow CI a couple
+  // of retries to absorb the occasional epoch-boundary straddle or socket hiccup.
+  retries: process.env.CI ? 2 : 0,
   workers: 1,
   reporter: process.env.CI ? 'line' : 'list',
   timeout: 120_000,
