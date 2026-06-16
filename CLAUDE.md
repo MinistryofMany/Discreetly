@@ -273,7 +273,7 @@ build pipeline. Do not add it to `pnpm-workspace.yaml` or import from it.
 
 ## Specs and plans
 
-Design: `docs/superpowers/specs/2026-06-12-discreetly-tessera-gating-design.md`
+Design: `docs/superpowers/specs/2026-06-12-discreetly-minister-gating-design.md`
 
 Implementation plans (in `docs/superpowers/plans/`):
 

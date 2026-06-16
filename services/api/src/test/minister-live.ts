@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 // Opt-in: the DB-mediated grant reaches into Minister's dev DB, whose role/name
-// move with the provider (e.g. the Tessera->Minister rename changed it). Set
+// move with the provider (a past provider rename changed it). Set
 // MINISTER_DEV_DATABASE_URL to enable; unset => the live test skips. (The
 // authoritative live proof is Plan 4's browser e2e against the settled provider.)
 const DEV_DB = process.env.MINISTER_DEV_DATABASE_URL;

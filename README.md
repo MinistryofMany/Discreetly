@@ -10,7 +10,7 @@ v2 replaces the old multi-gateway access model with **Minister** OIDC
 badge-gating: per-room boolean badge policies control who can join.
 
 For a deeper architecture walkthrough, see
-[`docs/superpowers/specs/2026-06-12-discreetly-tessera-gating-design.md`](docs/superpowers/specs/2026-06-12-discreetly-tessera-gating-design.md).
+[`docs/superpowers/specs/2026-06-12-discreetly-minister-gating-design.md`](docs/superpowers/specs/2026-06-12-discreetly-minister-gating-design.md).
 
 For working-in-repo guidance (internal-package pattern, env contracts, testing),
 see [`CLAUDE.md`](CLAUDE.md).
@@ -191,7 +191,7 @@ dev stack.
 
 **Trust model:** Semi-trusted / ZK-ready. The server re-verifies every RLN
 proof server-side. A clean seam is preserved for a future unlinkable ZK gate
-(see the Tessera gating design spec).
+(see the Minister gating design spec).
 
 **Ephemeral rooms:** `RoomPersistence.EPHEMERAL` rooms are a pure transport
 relay. The send pipeline (`services/api/src/messaging/pipeline.ts`) verifies the
