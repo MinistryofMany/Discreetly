@@ -1,6 +1,13 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 const PASSWORD = 'correct horse battery staple';
+
+// The identity commitment is masked by default behind a Reveal toggle; click it
+// (when present) so the digits render before we read or compare them.
+async function revealCommitment(page: Page): Promise<void> {
+  const reveal = page.getByRole('button', { name: /^reveal$/i });
+  if (await reveal.isVisible().catch(() => false)) await reveal.click();
+}
 
 test.describe('identity panel', () => {
   test('create, lock, wrong-password reject, unlock', async ({ page }) => {
@@ -10,6 +17,7 @@ test.describe('identity panel', () => {
     await page.getByLabel('Password').fill(PASSWORD);
     await page.getByRole('button', { name: /^create identity$/i }).click();
     await expect(page.getByText('Unlocked', { exact: true })).toBeVisible();
+    await revealCommitment(page);
     const commitment = await page.locator('text=commitment:').innerText();
     expect(commitment).toMatch(/commitment: \d+/);
 
@@ -27,6 +35,7 @@ test.describe('identity panel', () => {
     await page.getByLabel('Password').fill(PASSWORD);
     await page.getByRole('button', { name: /^unlock$/i }).click();
     await expect(page.getByText('Unlocked', { exact: true })).toBeVisible();
+    await revealCommitment(page);
     await expect(page.locator('text=commitment:')).toHaveText(commitment);
   });
 

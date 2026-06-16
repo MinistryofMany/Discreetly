@@ -66,10 +66,15 @@ function kill(child: ChildProcess): Promise<void> {
   });
 }
 
-/** Build the web app once with the e2e public API URLs inlined. */
+/**
+ * Build the web app once with the e2e public API URLs inlined. Uses
+ * `pnpm run build` (not `next build` directly) so the package's `prebuild` hook
+ * copies the vendored RLN circuit artifacts into public/; otherwise
+ * /circuits/rln/circuit.wasm 404s and in-browser RLN proving fails.
+ */
 export async function buildWeb(): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const child = spawn('pnpm', ['exec', 'next', 'build'], {
+    const child = spawn('pnpm', ['run', 'build'], {
       cwd: webRoot,
       env: {
         ...process.env,
