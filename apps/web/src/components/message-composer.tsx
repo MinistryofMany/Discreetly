@@ -62,8 +62,6 @@ export function MessageComposer({
 
   const sendMutation = useMutation(trpc.message.send.mutationOptions());
 
-  // Rate-limit preview: how many message slots remain for the current epoch.
-  const epoch = React.useMemo(() => currentEpoch(room.rateLimit), [room.rateLimit]);
   const userMessageLimit = BigInt(room.userMessageLimit);
 
   const aesRequired = room.encryption === 'AES';
@@ -87,6 +85,11 @@ export function MessageComposer({
 
     setSending(true);
     try {
+      // Sample the epoch ONCE, fresh, at send time and use it for both the
+      // messageId reservation and the proof. A frozen mount-time epoch goes
+      // stale and the server rejects the message as `bad-epoch`.
+      const epoch = currentEpoch(room.rateLimit);
+
       // Reserve the next messageId for this (room, epoch). Throws if exhausted -
       // sending again this epoch would self-collide and trigger a ban.
       let messageId: bigint;

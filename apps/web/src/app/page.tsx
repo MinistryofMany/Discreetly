@@ -28,15 +28,10 @@ export default async function HomePage() {
 
       {session ? (
         <section className="mb-10 rounded-lg border bg-card p-4">
-          <p className="text-sm">
-            Signed in as{' '}
-            <span className="font-medium">{session.name ?? 'anonymous'}</span>
+          <p className="text-sm">Signed in.</p>
+          <p className="text-xs text-muted-foreground">
+            You are anonymous - no account name is shown or shared.
           </p>
-          {session.sub ? (
-            <p className="break-all text-xs text-muted-foreground">
-              sub: {session.sub}
-            </p>
-          ) : null}
         </section>
       ) : (
         <section className="mb-10 rounded-lg border bg-card p-4 text-sm text-muted-foreground">
