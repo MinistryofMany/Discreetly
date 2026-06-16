@@ -64,8 +64,8 @@ export function RoomList() {
 
   if (rooms.isLoading) {
     return (
-      <div className="grid gap-3">
-        {[0, 1, 2].map((i) => (
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {[0, 1, 2, 3, 4, 5].map((i) => (
           <Skeleton key={i} className="h-28 w-full" />
         ))}
       </div>
@@ -85,7 +85,7 @@ export function RoomList() {
   }
 
   return (
-    <ul className="grid gap-3">
+    <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {(rooms.data as unknown as PublicRoom[]).map((room) => (
         <li key={room.id}>
           <RoomCard room={room} />

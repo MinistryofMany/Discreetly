@@ -1102,7 +1102,7 @@ function BroadcastTab() {
 
 function AdminDashboard() {
   return (
-    <main className="container mx-auto max-w-5xl px-4 py-10">
+    <div className="mx-auto w-full max-w-5xl px-4 py-8 md:py-10">
       <header className="mb-8">
         <h1 className="text-2xl font-bold tracking-tight">Admin dashboard</h1>
       </header>
@@ -1132,7 +1132,7 @@ function AdminDashboard() {
           <BroadcastTab />
         </TabsContent>
       </Tabs>
-    </main>
+    </div>
   );
 }
 

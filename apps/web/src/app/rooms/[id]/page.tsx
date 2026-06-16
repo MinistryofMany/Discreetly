@@ -9,7 +9,7 @@ export default async function RoomPage({
 }) {
   const { id } = await params;
   return (
-    <main className="container mx-auto flex min-h-screen max-w-3xl flex-col px-4 py-6">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-4xl flex-col px-4 py-4 md:py-6">
       <header className="mb-4 flex items-center justify-between gap-4">
         <Button asChild variant="ghost" size="sm">
           <Link href="/">&larr; Rooms</Link>
@@ -19,6 +19,6 @@ export default async function RoomPage({
         </Button>
       </header>
       <RoomView roomId={id} />
-    </main>
+    </div>
   );
 }

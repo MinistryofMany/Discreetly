@@ -2,46 +2,77 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Discreetly theme, ported from the original Skeleton-based frontend.
+ * Dark, green-tinted near-black surfaces with a coral-red primary and a
+ * teal tertiary accent. Colors are expressed as HSL channels so they slot
+ * into the shadcn/Tailwind token system.
+ */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
+    /* surfaces */
+    --background: 180 8% 14%; /* surface-700  #212727 */
+    --foreground: 180 3% 88%; /* surface-50   #dfe1e1 */
+    --card: 180 9% 11%; /* surface-800  #1a1f1f */
+    --card-foreground: 180 3% 88%;
+    --popover: 180 9% 11%;
+    --popover-foreground: 180 3% 88%;
+
+    /* primary — coral #fa5f5f */
+    --primary: 0 94% 68%;
+    --primary-foreground: 180 6% 9%; /* near-black surface-900 */
+
+    /* secondary / muted / accent — subtle dark surfaces */
+    --secondary: 180 8% 17%; /* surface-600 #282f2f */
+    --secondary-foreground: 180 3% 88%;
+    --muted: 180 8% 17%;
+    --muted-foreground: 180 3% 64%; /* surface-300-ish */
+    --accent: 180 8% 19%; /* surface-500 #2c3434 */
+    --accent-foreground: 180 3% 92%;
+
+    /* tertiary — teal #158993 */
+    --tertiary: 185 75% 33%;
+    --tertiary-foreground: 0 0% 100%;
+
+    /* feedback */
+    --destructive: 0 94% 64%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 140 40% 45%; /* #45a164 */
+    --warning: 45 57% 59%; /* #d2b45c */
+
+    /* lines + focus */
+    --border: 180 8% 22%;
+    --input: 180 8% 22%;
+    --ring: 0 94% 68%;
+
+    --radius: 0.25rem; /* 4px base, matches old --theme-rounded-base */
   }
 
+  /* The app forces dark; mirror the tokens so .dark stays authoritative. */
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    --background: 180 8% 14%;
+    --foreground: 180 3% 88%;
+    --card: 180 9% 11%;
+    --card-foreground: 180 3% 88%;
+    --popover: 180 9% 11%;
+    --popover-foreground: 180 3% 88%;
+    --primary: 0 94% 68%;
+    --primary-foreground: 180 6% 9%;
+    --secondary: 180 8% 17%;
+    --secondary-foreground: 180 3% 88%;
+    --muted: 180 8% 17%;
+    --muted-foreground: 180 3% 64%;
+    --accent: 180 8% 19%;
+    --accent-foreground: 180 3% 92%;
+    --tertiary: 185 75% 33%;
+    --tertiary-foreground: 0 0% 100%;
+    --destructive: 0 94% 64%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 140 40% 45%;
+    --warning: 45 57% 59%;
+    --border: 180 8% 22%;
+    --input: 180 8% 22%;
+    --ring: 0 94% 68%;
   }
 }
 
@@ -49,7 +80,61 @@
   * {
     @apply border-border;
   }
+
+  /* Paint the root element dark too, so a refresh, overscroll, or the area
+     outside the app shell never flashes the browser's default white. */
+  html {
+    background-color: hsl(var(--background));
+    color-scheme: dark;
+  }
+
   body {
-    @apply bg-background text-foreground;
+    @apply min-h-dvh bg-background text-foreground;
+    font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-display), ui-monospace, monospace;
+    font-weight: 350;
+    letter-spacing: -0.01em;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.85);
+    color: hsl(var(--primary-foreground));
+  }
+
+  /* Thin, theme-aware scrollbars to match the chrome */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--accent)) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: hsl(var(--accent));
+    border-radius: 9999px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.4);
+  }
+}
+
+@layer components {
+  /* Inline prose links, ported from the old `.link` rule. */
+  .link {
+    color: hsl(var(--primary));
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .link:hover {
+    color: hsl(var(--primary) / 0.8);
   }
 }

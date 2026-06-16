@@ -21,7 +21,7 @@ export default function Error({
   }, [error]);
 
   return (
-    <main className="container mx-auto flex min-h-screen max-w-lg flex-col items-center justify-center gap-4 px-4 py-10 text-center">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-lg flex-col items-center justify-center gap-4 px-4 py-10 text-center">
       <h1 className="text-2xl font-bold tracking-tight">Something went wrong</h1>
       <p className="text-sm text-muted-foreground">
         An unexpected error occurred while rendering this page. You can try again,
@@ -36,6 +36,6 @@ export default function Error({
           Back to rooms
         </Button>
       </div>
-    </main>
+    </div>
   );
 }
