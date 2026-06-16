@@ -42,6 +42,7 @@ export function IdentityPanel() {
   const [busy, setBusy] = React.useState(false);
   const [importing, setImporting] = React.useState<AppIdentity | null>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
+  const [revealCommitment, setRevealCommitment] = React.useState(false);
 
   React.useEffect(() => {
     refresh();
@@ -175,9 +176,21 @@ export function IdentityPanel() {
             <div className="flex items-center gap-2">
               <Badge variant="success">Unlocked</Badge>
             </div>
-            <p className="break-all font-mono text-xs text-muted-foreground">
-              commitment: {identity.commitment.toString()}
-            </p>
+            <div className="flex items-start gap-2">
+              <p className="break-all font-mono text-xs text-muted-foreground">
+                commitment:{' '}
+                {revealCommitment ? identity.commitment.toString() : '•'.repeat(16)}
+              </p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-5 shrink-0 px-2 text-xs"
+                onClick={() => setRevealCommitment((v) => !v)}
+              >
+                {revealCommitment ? 'Hide' : 'Reveal'}
+              </Button>
+            </div>
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
