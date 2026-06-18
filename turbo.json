@@ -1,5 +1,13 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalPassThroughEnv": [
+    "PRISMA_QUERY_ENGINE_LIBRARY",
+    "PRISMA_QUERY_ENGINE_BINARY",
+    "PRISMA_SCHEMA_ENGINE_BINARY",
+    "PRISMA_FMT_BINARY",
+    "PRISMA_CLIENT_ENGINE_TYPE",
+    "PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING"
+  ],
   "tasks": {
     "generate": { "cache": false },
     "build": {

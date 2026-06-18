@@ -33,6 +33,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@auth/prisma-adapter':
+        specifier: 2.11.2
+        version: 2.11.2(@prisma/client@6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3))
       '@discreetly/api':
         specifier: workspace:*
         version: link:../../services/api
@@ -42,6 +45,9 @@ importers:
       '@discreetly/crypto':
         specifier: workspace:*
         version: link:../../packages/crypto
+      '@discreetly/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@discreetly/policy':
         specifier: workspace:*
         version: link:../../packages/policy
@@ -51,6 +57,9 @@ importers:
       '@minister/client':
         specifier: git+https://github.com/MinistryofMany/minister-client.git#a009051
         version: https://codeload.github.com/MinistryofMany/minister-client/tar.gz/a009051
+      '@prisma/client':
+        specifier: ^6.19.3
+        version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
       '@radix-ui/react-avatar':
         specifier: ^1.1.12
         version: 1.1.12(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -93,6 +102,9 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
+      jose:
+        specifier: ^5.9.6
+        version: 5.10.0
       next:
         specifier: 15.5.19
         version: 15.5.19(@playwright/test@1.60.0)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -118,15 +130,9 @@ importers:
         specifier: ^3.24.1
         version: 3.25.76
     devDependencies:
-      '@discreetly/db':
-        specifier: workspace:*
-        version: link:../../packages/db
       '@playwright/test':
         specifier: ^1.49.1
         version: 1.60.0
-      '@prisma/client':
-        specifier: ^6.19.3
-        version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
       '@semaphore-protocol/identity':
         specifier: 3.15.0
         version: 3.15.0
@@ -154,9 +160,6 @@ importers:
       happy-dom:
         specifier: ^20.8.9
         version: 20.10.4
-      jose:
-        specifier: ^5.9.6
-        version: 5.10.0
       pg:
         specifier: ^8.21.0
         version: 8.21.0
@@ -367,6 +370,11 @@ packages:
         optional: true
       nodemailer:
         optional: true
+
+  '@auth/prisma-adapter@2.11.2':
+    resolution: {integrity: sha512-GyNEUNtrPgDPs0M4xX6F5i7jTsCKwU6BXV9zutctcoo6K1Ud+juckrmQS11uyNgeWsw6sliextHbU/e+8lsizQ==}
+    peerDependencies:
+      '@prisma/client': '>=2.26.0 || >=3 || >=4 || >=5 || >=6'
 
   '@emnapi/core@1.10.0':
     resolution: {integrity: sha512-yq6OkJ4p82CAfPl0u9mQebQHKPJkY7WrIuk205cTYnYe+k2Z8YBh11FrbRG/H6ihirqcacOgl2BIO8oyMQLeXw==}
@@ -3871,6 +3879,15 @@ snapshots:
       oauth4webapi: 3.8.6
       preact: 10.24.3
       preact-render-to-string: 6.5.11(preact@10.24.3)
+
+  '@auth/prisma-adapter@2.11.2(@prisma/client@6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3))':
+    dependencies:
+      '@auth/core': 0.41.2
+      '@prisma/client': 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
+    transitivePeerDependencies:
+      - '@simplewebauthn/browser'
+      - '@simplewebauthn/server'
+      - nodemailer
 
   '@emnapi/core@1.10.0':
     dependencies:

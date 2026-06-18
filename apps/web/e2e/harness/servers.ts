@@ -129,10 +129,14 @@ export async function startServers(): Promise<RunningServers> {
   await waitForHttp(API_URL, 'api');
 
   // 3. Web app (production server with e2e env). Build must have run first.
+  // Database-strategy Auth.js needs DATABASE_URL at runtime (the Prisma adapter
+  // reads/writes Session + Account rows), so point web at the same isolated e2e
+  // database the API and the migration step use.
   const web = spawn('pnpm', ['exec', 'next', 'start', '--port', String(WEB_PORT)], {
     cwd: webRoot,
     env: {
       ...process.env,
+      DATABASE_URL: E2E_DATABASE_URL,
       NEXT_PUBLIC_API_URL: API_URL,
       NEXT_PUBLIC_API_WS_URL: API_WS_URL,
       AUTH_URL: WEB_URL,

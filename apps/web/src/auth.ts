@@ -1,6 +1,9 @@
 import NextAuth from 'next-auth';
+import { PrismaAdapter } from '@auth/prisma-adapter';
+import { prisma } from '@discreetly/db';
 import { ministerProvider } from '@minister/client/auth-js';
 import { badgeScopes } from '@minister/client/badges';
+import { decodeMinisterClaims } from '@/lib/minister-claims';
 
 // Auth.js v5 RP for Discreetly. Signs in via Minister using the
 // `@minister/client` provider helper, which returns the same generic OIDC
@@ -8,13 +11,25 @@ import { badgeScopes } from '@minister/client/badges';
 // state + nonce). Minister publishes /.well-known/openid-configuration, so
 // Auth.js discovers authorize/token/userinfo/jwks from the issuer URL.
 //
-// JWT-strategy sessions (no DB). The relevant Minister id_token claims are
-// copied onto the session so the browser can forward the id_token to the API
-// (the API re-verifies everything) and render the user. The badge VC JWTs in
-// `minister_badges` are carried RAW onto the session for the client-side
-// preview decoder; the API is the sole verification authority.
+// Database-strategy sessions: the login session is an opaque session-id cookie
+// backed by a `Session` row in Postgres (via the Prisma adapter). The adapter
+// also persists the Minister OAuth account - including its `id_token` - in the
+// `Account` table at sign-in. The browser still forwards that id_token to the
+// API (the API re-verifies everything; it is the sole verification authority);
+// the session callback reads it back from the Account row and decodes its
+// payload for display only. Sign-out deletes the Session row server-side
+// (Auth.js core calls `adapter.deleteSession` under database strategy), so the
+// session is revoked, not merely cookie-cleared.
+const MINISTER_PROVIDER_ID = 'minister';
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  session: { strategy: 'jwt' },
+  adapter: PrismaAdapter(prisma),
+  // Database strategy: opaque cookie -> Session row. maxAge keeps the Auth.js
+  // default of 30 days (30 * 24 * 60 * 60 s) so login lifetime is unchanged.
+  // NOTE: the forwarded Minister id_token is short-lived (~10 min) and has no
+  // refresh path, so gated API calls fail once it expires until re-auth - a
+  // pre-existing limitation, documented in docs/auth-session-model.md.
+  session: { strategy: 'database', maxAge: 30 * 24 * 60 * 60 },
   providers: [
     ministerProvider({
       issuer: process.env.MINISTER_ISSUER!,
@@ -34,36 +49,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    async jwt({ token, account, profile }) {
-      if (account?.id_token) {
-        token.idToken = account.id_token;
-      }
-      // For an OIDC provider, `profile` is the decoded id_token payload.
-      if (profile) {
-        const p = profile as {
-          sub?: unknown;
-          name?: unknown;
-          picture?: unknown;
-          minister_badges?: unknown;
-        };
-        if (typeof p.sub === 'string') token.ministerSub = p.sub;
-        if (typeof p.name === 'string') token.ministerName = p.name;
-        if (typeof p.picture === 'string') token.ministerPicture = p.picture;
-        if (Array.isArray(p.minister_badges)) {
-          token.ministerBadges = p.minister_badges.filter(
-            (x): x is string => typeof x === 'string',
-          );
-        }
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      session.idToken = (token.idToken as string | undefined) ?? null;
-      session.sub = (token.ministerSub as string | undefined) ?? null;
-      session.name = (token.ministerName as string | undefined) ?? null;
-      session.picture = (token.ministerPicture as string | undefined) ?? null;
-      session.ministerBadges =
-        (token.ministerBadges as string[] | undefined) ?? [];
+    // Under database strategy the session callback receives the adapter `user`
+    // (not a JWT token). The Minister id_token was persisted on the Account row
+    // at sign-in; read it back, expose it for the API-bound Authorization
+    // header, and decode its payload (display only) to recover sub / name /
+    // picture / minister_badges. Decoding never verifies - the API is the sole
+    // verifier - so a malformed token must fail closed to empty display values.
+    async session({ session, user }) {
+      const account = await prisma.account.findFirst({
+        where: { userId: user.id, provider: MINISTER_PROVIDER_ID },
+        select: { id_token: true },
+      });
+      const idToken = account?.id_token ?? null;
+      session.idToken = idToken;
+
+      const claims = decodeMinisterClaims(idToken);
+      session.sub = claims.sub;
+      session.name = claims.name;
+      session.picture = claims.picture;
+      session.ministerBadges = claims.ministerBadges;
       return session;
     },
   },
