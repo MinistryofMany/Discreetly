@@ -13,6 +13,8 @@ export interface AuthorizeLogEntry {
   state: string;
   scope: string;
   scopes: string[];
+  /** The raw `minister_policy` param the RP sent, or null (Phase 2). */
+  ministerPolicy: string | null;
 }
 
 /** All /oidc/authorize requests the mock issuer saw, newest last. */
@@ -36,6 +38,13 @@ export async function lastAuthorizeBadgeScopes(): Promise<string[]> {
     .split(/\s+/)
     .filter((s) => s.startsWith('badge:'))
     .sort();
+}
+
+/** Whether the most recent /oidc/authorize carried a `minister_policy` param (Phase 2). */
+export async function lastAuthorizeHasMinisterPolicy(): Promise<boolean> {
+  const log = await getAuthorizeLog();
+  if (log.length === 0) throw new Error('no authorize requests recorded yet');
+  return log[log.length - 1]!.ministerPolicy !== null;
 }
 
 let counter = 0;

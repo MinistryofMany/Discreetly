@@ -7,14 +7,8 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
 import { useTRPC } from '@/lib/trpc';
 import { useIdentity } from '@/lib/identity-context';
-import {
-  computeEligibility,
-  scopesToRequestForRoom,
-  roomScopeOptions,
-  roomHasBranchChoice,
-  defaultRoomBranch,
-} from '@/lib/badges';
-import { badgeScopes } from '@minister/client/badges';
+import { computeEligibility, scopesToRequestForRoom } from '@/lib/badges';
+import { encodeMinisterPolicy } from '@/lib/minister-policy';
 import { asPolicyNode, type PublicRoom } from '@/lib/room-types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -49,44 +43,37 @@ export function JoinPanel({
   const policy = asPolicyNode(room.accessPolicy);
 
   // Authoritative durable proven set for this user (server verifies the id_token
-  // from the Authorization header and keys on the verified sub). Used to compute
-  // the join "delta" so we request only genuinely-new badges. Empty when signed
-  // out / token invalid (fail closed: request everything the room needs).
+  // from the Authorization header and keys on the verified sub). Refreshed after
+  // a successful join so downstream consumers stay current.
   const provenQuery = useQuery({
     ...trpc.membership.provenBadges.queryOptions(),
     enabled: Boolean(session?.idToken),
   });
-  const provenTypes = provenQuery.data?.badgeTypes ?? [];
 
   const eligibility = computeEligibility(policy, session?.ministerBadges ?? []);
 
-  // INTERIM - Phase 2 moves OR/threshold selection to Minister. The user may pick
-  // a non-default branch here; `null` means "use the cheapest default".
-  const branchChoice = roomHasBranchChoice(policy);
-  const [chosenBranch, setChosenBranch] = React.useState<string[] | null>(null);
-  const branchOptions = React.useMemo(() => roomScopeOptions(policy), [policy]);
-
   /**
-   * Model 2b: trigger a room-scoped Minister sign-in that requests this room's
-   * FULL required badge set (a single chosen branch), via the THIRD `signIn` arg.
-   * NOT the delta - the owner chose to re-request already-proven badges each time
-   * so the live token presented to the gate always carries the room's complete
-   * set. A chosen OR-branch overrides the cheapest default. Fails closed to base
-   * scopes (server denies) on a malformed/unsatisfiable policy.
+   * Trigger a room-scoped Minister sign-in (via the THIRD `signIn` arg) that
+   * requests the UNION of this room's required badge types as `scope` AND sends
+   * the room's policy AST as the `minister_policy` param. Minister - which knows
+   * each type's anonymity-set size - selects the minimal satisfying subset to
+   * disclose (and lets the user override at consent); Discreetly no longer picks
+   * an OR/threshold branch itself. Fails closed to base scopes (server denies)
+   * on a malformed/unsatisfiable policy.
    *
-   * Over-disclosure-to-RP invariant: the requested badges are exactly one branch
-   * of THIS room's policy, never the whole wallet or another room's badges.
+   * Over-disclosure-to-RP invariant: even though the union scope lists every
+   * candidate type, Minister discloses only one satisfying subset of THIS room's
+   * policy - never the whole wallet, never another room's badges. If the policy
+   * cannot be encoded, the `minister_policy` param is omitted (fail-closed) and
+   * Minister falls back to per-scope disclosure; the server gate stays
+   * authoritative.
    */
   function signInForRoom(): void {
-    let scope: string[];
-    if (chosenBranch) {
-      // Honor the user's explicit OR-branch pick - the FULL branch (2b), not a
-      // delta. `provenTypes` does not subtract here.
-      scope = ['openid', 'profile', ...badgeScopes(chosenBranch)];
-    } else {
-      scope = scopesToRequestForRoom(policy, provenTypes);
-    }
-    void signIn('minister', { redirectTo: `/rooms/${room.id}` }, { scope: scope.join(' ') });
+    const scope = scopesToRequestForRoom(policy);
+    const ministerPolicy = encodeMinisterPolicy(policy);
+    const params: Record<string, string> = { scope: scope.join(' ') };
+    if (ministerPolicy !== null) params.minister_policy = ministerPolicy;
+    void signIn('minister', { redirectTo: `/rooms/${room.id}` }, params);
   }
 
   async function handleJoin() {
@@ -161,38 +148,6 @@ export function JoinPanel({
                 join).
               </p>
             )}
-
-            {/* INTERIM - Phase 2 moves OR-selection to Minister. For a room that
-                accepts a CHOICE of proofs, let the user pick which one to disclose
-                (default: the cheapest for them). */}
-            {branchChoice ? (
-              <div className="space-y-1 rounded border border-dashed p-2">
-                <p className="text-xs text-muted-foreground">
-                  This room accepts one of several proofs. Choose which to disclose
-                  (interim - this selection will move into Minister consent):
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {branchOptions.map((opt) => {
-                    const key = opt.join('+');
-                    const isDefault =
-                      JSON.stringify(opt) === JSON.stringify(defaultRoomBranch(policy, provenTypes));
-                    const selected = chosenBranch
-                      ? JSON.stringify(chosenBranch) === JSON.stringify(opt)
-                      : isDefault;
-                    return (
-                      <Button
-                        key={key}
-                        size="sm"
-                        variant={selected ? 'default' : 'outline'}
-                        onClick={() => setChosenBranch(opt)}
-                      >
-                        {opt.length === 0 ? 'no badges' : opt.join(' + ')}
-                      </Button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -201,8 +156,9 @@ export function JoinPanel({
         )}
 
         {!session ? (
-          // Room-scoped sign-in: request only this room's required badges (the
-          // delta), not the whole wallet. A non-room sign-in lives in the header.
+          // Room-scoped sign-in: request this room's required badge types (and its
+          // policy, so Minister selects the minimal satisfying set), not the whole
+          // wallet. A non-room sign-in lives in the header.
           <Button onClick={signInForRoom}>Sign in with Minister</Button>
         ) : (
           <>

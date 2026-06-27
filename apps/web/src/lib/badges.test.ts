@@ -5,9 +5,6 @@ import {
   decodeBadge,
   decodeBadges,
   scopesToRequestForRoom,
-  roomScopeOptions,
-  roomHasBranchChoice,
-  defaultRoomBranch,
 } from './badges';
 
 function b64url(obj: unknown): string {
@@ -144,12 +141,12 @@ describe('computeEligibility', () => {
   });
 });
 
-describe('scopesToRequestForRoom (per-room disclosure, model 2b: full required set)', () => {
+describe('scopesToRequestForRoom (Phase 2: union scope; Minister selects)', () => {
   it('requests only the base scopes for an open room', () => {
     expect(scopesToRequestForRoom({ allOf: [] })).toEqual(['openid', 'profile']);
   });
 
-  it('requests the badge scope for a single-badge room (nothing proven)', () => {
+  it('requests the badge scope for a single-badge room', () => {
     const policy: PolicyNode = { badge: { type: 'age-over-18' } };
     expect(scopesToRequestForRoom(policy)).toEqual([
       'openid',
@@ -158,13 +155,11 @@ describe('scopesToRequestForRoom (per-room disclosure, model 2b: full required s
     ]);
   });
 
-  it('2b: requests the room FULL set, NOT the delta: allOf[A,B] with A proven still requests A AND B', () => {
+  it('allOf room: requests the unambiguous full required set (union)', () => {
     const policy: PolicyNode = {
       allOf: [{ badge: { type: 'age-over-18' } }, { badge: { type: 'residency-country' } }],
     };
-    // Under 2b the already-proven A is re-requested so the live token carries the
-    // room's whole set; the delta optimization is intentionally given up.
-    expect(scopesToRequestForRoom(policy, ['age-over-18'])).toEqual([
+    expect(scopesToRequestForRoom(policy)).toEqual([
       'openid',
       'profile',
       'badge:age-over-18',
@@ -172,11 +167,15 @@ describe('scopesToRequestForRoom (per-room disclosure, model 2b: full required s
     ]);
   });
 
-  it('2b: re-requests the full set even when every required type is already proven', () => {
+  it('OR room: requests the UNION of every candidate type (Minister selects the branch)', () => {
     const policy: PolicyNode = {
-      allOf: [{ badge: { type: 'age-over-18' } }, { badge: { type: 'residency-country' } }],
+      anyOf: [{ badge: { type: 'age-over-18' } }, { badge: { type: 'residency-country' } }],
     };
-    expect(scopesToRequestForRoom(policy, ['age-over-18', 'residency-country'])).toEqual([
+    // Phase 2: Discreetly no longer pre-picks a branch. It sends the union of
+    // candidate types as the *menu*; the `minister_policy` param (encoded
+    // separately) carries the structure so Minister discloses one minimal
+    // satisfying subset.
+    expect(scopesToRequestForRoom(policy)).toEqual([
       'openid',
       'profile',
       'badge:age-over-18',
@@ -184,59 +183,40 @@ describe('scopesToRequestForRoom (per-room disclosure, model 2b: full required s
     ]);
   });
 
-  it('OR room: requests exactly one branch (the cheapest), not the union', () => {
+  it('atLeast room: requests the union of all candidate types', () => {
     const policy: PolicyNode = {
-      anyOf: [{ badge: { type: 'age-over-18' } }, { badge: { type: 'residency-country' } }],
+      atLeast: {
+        n: 2,
+        of: [
+          { badge: { type: 'age-over-18' } },
+          { badge: { type: 'residency-country' } },
+          { badge: { type: 'oauth-account' } },
+        ],
+      },
     };
-    const scopes = scopesToRequestForRoom(policy);
-    // Exactly one badge scope, not both: the OR-branch selection (over-disclosure
-    // invariant) is unchanged by 2b - 2b only stops subtracting already-proven
-    // types WITHIN the chosen branch.
-    const badgeScopesRequested = scopes.filter((s) => s.startsWith('badge:'));
-    expect(badgeScopesRequested).toHaveLength(1);
-    expect(scopes).toEqual(['openid', 'profile', 'badge:age-over-18']);
-  });
-
-  it('OR room: biases to a branch the user already proved, but still requests that FULL branch (2b)', () => {
-    const policy: PolicyNode = {
-      anyOf: [{ badge: { type: 'age-over-18' } }, { badge: { type: 'residency-country' } }],
-    };
-    // The user already proved residency-country, so that branch is chosen
-    // (least NEW disclosure), and under 2b it is re-requested in full.
-    expect(scopesToRequestForRoom(policy, ['residency-country'])).toEqual([
+    expect(scopesToRequestForRoom(policy)).toEqual([
       'openid',
       'profile',
+      'badge:age-over-18',
+      'badge:oauth-account',
       'badge:residency-country',
     ]);
   });
 
-  it('drops an unknown badge type and fails closed to base scopes when only-unknown', () => {
+  it('drops an unknown badge type but keeps known ones in the union', () => {
+    const policy: PolicyNode = {
+      anyOf: [{ badge: { type: 'totally-unknown' } }, { badge: { type: 'age-over-18' } }],
+    };
+    // The unknown slug is unrequestable and dropped; the known one remains.
+    expect(scopesToRequestForRoom(policy)).toEqual(['openid', 'profile', 'badge:age-over-18']);
+  });
+
+  it('fails closed to base scopes when only-unknown types are mentioned', () => {
     const policy: PolicyNode = { badge: { type: 'totally-unknown' } };
-    // The unknown branch is unrequestable -> no satisfying known option -> base only.
     expect(scopesToRequestForRoom(policy)).toEqual(['openid', 'profile']);
   });
 
   it('fails closed to base scopes on a malformed policy', () => {
     expect(scopesToRequestForRoom({} as unknown as PolicyNode)).toEqual(['openid', 'profile']);
-  });
-});
-
-describe('OR-branch UI helpers (INTERIM)', () => {
-  const orPolicy: PolicyNode = {
-    anyOf: [{ badge: { type: 'age-over-18' } }, { badge: { type: 'residency-country' } }],
-  };
-
-  it('roomScopeOptions lists each known satisfying branch', () => {
-    expect(roomScopeOptions(orPolicy)).toEqual([['age-over-18'], ['residency-country']]);
-  });
-
-  it('roomHasBranchChoice is true for an OR room, false for a single-badge room', () => {
-    expect(roomHasBranchChoice(orPolicy)).toBe(true);
-    expect(roomHasBranchChoice({ badge: { type: 'age-over-18' } })).toBe(false);
-  });
-
-  it('defaultRoomBranch picks the cheapest-for-this-user branch', () => {
-    expect(defaultRoomBranch(orPolicy)).toEqual(['age-over-18']);
-    expect(defaultRoomBranch(orPolicy, ['residency-country'])).toEqual(['residency-country']);
   });
 });

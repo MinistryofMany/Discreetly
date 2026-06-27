@@ -9,9 +9,6 @@ import {
   type VerifiedBadge,
   evaluate,
   requiredScopes,
-  minimalScopeOptions,
-  chooseScopeOption,
-  requiredTypesForRoom,
 } from '@discreetly/policy';
 import { badgeTypeOf, badgeScopes, knownBadgeTypes } from '@minister/client/badges';
 
@@ -135,79 +132,54 @@ export function computeEligibility(
   return { requiredScopes: requiredScopes(policy), disclosed, satisfied };
 }
 
-// ---- Per-room minimal disclosure (request side) -------------------------------
+// ---- Per-room disclosure request (Phase 2: Minister selects) -------------------
+//
+// Phase 2: Discreetly no longer picks an OR/threshold branch. It requests the
+// UNION of every badge type the room's policy mentions as the authorize `scope`
+// (the *menu* of types the RP may ask about) and sends the room's policy AST as
+// the `minister_policy` param (see `minister-policy.ts`). Minister - which knows
+// each type's anonymity-set size - selects the minimal satisfying set to disclose
+// and lets the user override at consent. The Phase-1 interim OR-branch picker
+// (`roomScopeOptions`/`defaultRoomBranch`/branch-selection UI) is retired.
+//
+// For an `allOf`-only room the union IS the unambiguous required set, so behavior
+// is unchanged from Phase 1. For an OR/threshold room the union now lists every
+// candidate type in `scope`; the `minister_policy` structure tells Minister which
+// minimal subset to actually disclose, so the relying party still receives only
+// one satisfying set (the over-disclosure invariant is upheld by Minister's
+// server-side selection, not by Discreetly pre-picking).
 
-/** The always-requested base scopes; a join that needs no new badge asks only this. */
+/** The always-requested base scopes; a join that needs no badge asks only this. */
 export const BASE_SCOPES: readonly string[] = ['openid', 'profile'];
 
 /** The Minister badge slugs Discreetly knows how to request, as a set. */
 const KNOWN_TYPES: ReadonlySet<string> = new Set(knownBadgeTypes());
 
 /**
- * The satisfying badge-type sets a room admits, restricted to known slugs - the
- * INTERIM OR/threshold picker's options. Empty when unsatisfiable or malformed
- * (the caller then requests only the base scopes and the server denies). INTERIM
- * - Phase 2 moves OR-selection to Minister.
+ * The scopes to request at a room join: `openid profile` plus a `badge:<type>`
+ * for every type the room's policy mentions (the UNION), restricted to badge
+ * slugs Discreetly knows how to request. This is the menu of types the RP is
+ * allowed to ask about; the accompanying `minister_policy` param (encoded
+ * separately) carries the structure over that menu so Minister selects the
+ * minimal satisfying subset to disclose.
+ *
+ * Fail-closed: a malformed policy (or one mentioning only unknown slugs) yields
+ * just the base scopes; the server gate is authoritative and denies an
+ * insufficient disclosure. The over-disclosure-to-relying-party invariant is
+ * preserved by Minister's selection: even though the union scope lists every
+ * candidate type, Minister discloses only one satisfying subset.
  */
-export function roomScopeOptions(policy: PolicyNode): string[][] {
-  return minimalScopeOptions(policy, { knownTypes: KNOWN_TYPES });
-}
-
-/**
- * Model 2b: the scopes to request at join - `openid profile` plus the badge
- * scopes for the room's FULL chosen branch (NOT minus already-proven types). The
- * owner chose to re-request a room's whole required set on each join so the live
- * token presented to the gate carries that room's complete badge set,
- * independent of any prior sign-in's token. Fails closed to `BASE_SCOPES` on a
- * malformed/unsatisfiable policy (the server gate is authoritative and denies).
- *
- * The over-disclosure-to-relying-party invariant holds: the requested badges are
- * exactly ONE satisfying branch of THIS room's policy (OR/threshold rooms still
- * pick a single branch), so Discreetly only ever receives badges the room it
- * joins requires - never the whole wallet, never another room's badges.
- *
- * `provenTypes` is used ONLY to bias the OR-branch choice toward one the user has
- * already mostly proven (least NEW disclosure to Minister within the choice); it
- * does NOT subtract from the requested set.
- *
- * INTERIM - the OR/threshold branch is auto-picked (cheapest for this user);
- * Phase 2 moves that selection to Minister.
- */
-export function scopesToRequestForRoom(
-  policy: PolicyNode,
-  provenTypes: readonly string[] = [],
-): string[] {
-  let required: string[] | null;
+export function scopesToRequestForRoom(policy: PolicyNode): string[] {
+  let types: string[];
   try {
-    required = requiredTypesForRoom(policy, new Set(provenTypes), {
-      knownTypes: KNOWN_TYPES,
-    });
+    // `requiredScopes` returns `badge:<type>` for the union of mentioned types,
+    // sorted; strip the prefix and keep only known, requestable slugs.
+    types = requiredScopes(policy)
+      .map((scope) => scope.replace(/^badge:/, ''))
+      .filter((type) => KNOWN_TYPES.has(type));
   } catch {
-    required = null;
+    types = [];
   }
-  // null => unsatisfiable/malformed; empty => the room needs no badges. Either
-  // way, request only the base scopes (the gate decides admission).
-  if (required === null || required.length === 0) return [...BASE_SCOPES];
-  return [...BASE_SCOPES, ...badgeScopes(required)];
-}
-
-/**
- * Whether a room policy offers a genuine OR/threshold choice (more than one
- * satisfying branch), so the UI should surface the INTERIM "choose a different
- * proof" affordance.
- */
-export function roomHasBranchChoice(policy: PolicyNode): boolean {
-  return roomScopeOptions(policy).length > 1;
-}
-
-/** The default (cheapest-for-this-user) branch the join will request. INTERIM. */
-export function defaultRoomBranch(
-  policy: PolicyNode,
-  provenTypes: readonly string[] = [],
-): string[] | null {
-  try {
-    return chooseScopeOption(policy, new Set(provenTypes), { knownTypes: KNOWN_TYPES });
-  } catch {
-    return null;
-  }
+  if (types.length === 0) return [...BASE_SCOPES];
+  return [...BASE_SCOPES, ...badgeScopes(types)];
 }
