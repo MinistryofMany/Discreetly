@@ -1,2 +1,9 @@
 node_modules/
 build/
+
+# Parked research artifact: do not commit the lockfile. It is regenerable via
+# `npm install` (see README). Keeping it out of git keeps this off-app prototype
+# out of the repo dependency graph, so Dependabot does not raise security alerts
+# for its transitive deps. The `overrides` in package.json still pins the
+# security floor (e.g. underscore >=1.13.8) for anyone who regenerates it.
+package-lock.json
