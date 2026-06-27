@@ -122,6 +122,27 @@ model AdminUser {
   createdAt   DateTime @default(now())
 }
 
+/// Durable record that the Discreetly user behind <userKey> proved badge
+/// <badgeType> to Discreetly at least once. NOT a credential store: no VC, no
+/// attribute values, no VC `iat`. Source of truth for "already proven", so a
+/// later room requests only genuinely-new badge types. Constrained policy leaves
+/// (where/maxAgeDays) are NOT satisfiable from this store and always re-request
+/// the live badge (fork F-D): the store carries no attributes or issued-at, so
+/// it can only ever satisfy a bare type-only leaf.
+model ProvenBadge {
+  id            String   @id @default(cuid())
+  /// Discreetly-scoped user key: toField(pairwise sub) as a decimal string
+  /// (same reduction as join-nullifier's toField). The raw Minister sub never
+  /// leaves Discreetly; the pairwise sub is already RP-scoped.
+  userKey       String
+  /// Minister badge slug, e.g. "age-over-18". A known type only.
+  badgeType     String
+  firstProvenAt DateTime @default(now())
+
+  @@unique([userKey, badgeType])
+  @@index([userKey])
+}
+
 model AuditLog {
   id        String   @id @default(cuid())
   actor     String

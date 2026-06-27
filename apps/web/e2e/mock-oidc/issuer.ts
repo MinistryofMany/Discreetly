@@ -114,6 +114,8 @@ interface PendingAuth {
   nonce?: string;
   codeChallenge: string;
   redirectUri: string;
+  /** The raw `scope` the RP requested at /oidc/authorize (space-delimited). */
+  scope: string;
 }
 
 interface IssuedCode {
@@ -127,6 +129,23 @@ interface IssuedCode {
 
 const pending = new Map<string, PendingAuth>(); // state -> pending auth
 const codes = new Map<string, IssuedCode>(); // code -> grant
+
+/**
+ * Test-readable log of the `scope` each /oidc/authorize request asked for, keyed
+ * by `state`. Exposed at `GET /test/authorize-log` so disclosure specs can assert
+ * that a join requested ONLY the room's required badge scopes (per-room minimal
+ * disclosure). In insertion order; the latest entry is the most recent authorize.
+ */
+const authorizeLog: { state: string; scope: string; scopes: string[] }[] = [];
+
+/** Badge catalog keys implied by a space-delimited `scope` string. */
+function badgeKeysFromScope(scope: string): string[] {
+  return scope
+    .split(/\s+/)
+    .filter((s) => s.startsWith('badge:'))
+    .map((s) => s.slice('badge:'.length))
+    .filter((slug) => slug in BADGE_CATALOG);
+}
 
 function s256(verifier: string): string {
   return createHash('sha256').update(verifier).digest('base64url');
@@ -222,6 +241,10 @@ async function handle(req: IncomingMessage, res: ServerResponse, issuer: string)
   if (path === '/oidc/approve') return approve(req, res);
   if (path === '/oidc/token') return token(req, res, issuer);
 
+  // Test-only: the scope each authorize asked for, newest last. Disclosure specs
+  // read this to assert per-room minimal disclosure.
+  if (path === '/test/authorize-log') return json(res, { entries: authorizeLog });
+
   if (path === '/oidc/userinfo') {
     // Minimal userinfo; the app reads claims from the id_token, not here.
     return json(res, { sub: 'mock' });
@@ -258,7 +281,12 @@ function authorize(req: IncomingMessage, res: ServerResponse, url: URL): void {
     return;
   }
 
-  pending.set(state, { state, nonce, codeChallenge, redirectUri });
+  // Record exactly what scope the RP asked for, so specs can assert per-room
+  // minimal disclosure (only the room's badges, never the whole wallet).
+  const scope = q.get('scope') ?? '';
+  authorizeLog.push({ state, scope, scopes: scope.split(/\s+/).filter(Boolean) });
+
+  pending.set(state, { state, nonce, codeChallenge, redirectUri, scope });
 
   // Fast-path: tests preselect sub/email + badges and auto-submit.
   const auto = q.get('auto');
@@ -310,7 +338,14 @@ async function approve(req: IncomingMessage, res: ServerResponse): Promise<void>
   const email = form.get('email') ?? 'user@example.com';
   const name = form.get('name') ?? email;
   const sub = subFor(email);
-  const badgeKeys = form.getAll('badge');
+  // A faithful issuer mints only badges that were requested AND consented. We
+  // treat both the requested `badge:` scopes and any explicitly-checked boxes as
+  // consented, so: (a) the new per-room flow (scope-driven, no boxes) mints
+  // exactly the room's badges, and (b) existing specs that check boxes still work.
+  const p = pending.get(state);
+  const scopeKeys = p ? badgeKeysFromScope(p.scope) : [];
+  const checkedKeys = form.getAll('badge');
+  const badgeKeys = [...new Set([...scopeKeys, ...checkedKeys])];
   const badges = badgeKeys
     .map((k) => BADGE_CATALOG[k])
     .filter((b): b is MockBadge => b !== undefined);

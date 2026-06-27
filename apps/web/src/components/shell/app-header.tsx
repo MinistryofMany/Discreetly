@@ -20,6 +20,8 @@ function AuthControl() {
     );
   }
 
+  // Global sign-in: intentionally badge-free (provider default is
+  // `['openid','profile']`). Per-room badge scopes are requested at join.
   return (
     <Button size="sm" onClick={() => signIn('minister')}>
       Sign in

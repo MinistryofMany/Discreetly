@@ -9,8 +9,11 @@ import {
   type VerifiedBadge,
   evaluate,
   requiredScopes,
+  minimalScopeOptions,
+  chooseScopeOption,
+  requiredTypesForRoom,
 } from '@discreetly/policy';
-import { badgeTypeOf } from '@minister/client/badges';
+import { badgeTypeOf, badgeScopes, knownBadgeTypes } from '@minister/client/badges';
 
 /**
  * Map a VC `type` array to the Minister badge slug using the SDK's canonical
@@ -130,4 +133,81 @@ export function computeEligibility(
     satisfied = false;
   }
   return { requiredScopes: requiredScopes(policy), disclosed, satisfied };
+}
+
+// ---- Per-room minimal disclosure (request side) -------------------------------
+
+/** The always-requested base scopes; a join that needs no new badge asks only this. */
+export const BASE_SCOPES: readonly string[] = ['openid', 'profile'];
+
+/** The Minister badge slugs Discreetly knows how to request, as a set. */
+const KNOWN_TYPES: ReadonlySet<string> = new Set(knownBadgeTypes());
+
+/**
+ * The satisfying badge-type sets a room admits, restricted to known slugs - the
+ * INTERIM OR/threshold picker's options. Empty when unsatisfiable or malformed
+ * (the caller then requests only the base scopes and the server denies). INTERIM
+ * - Phase 2 moves OR-selection to Minister.
+ */
+export function roomScopeOptions(policy: PolicyNode): string[][] {
+  return minimalScopeOptions(policy, { knownTypes: KNOWN_TYPES });
+}
+
+/**
+ * Model 2b: the scopes to request at join - `openid profile` plus the badge
+ * scopes for the room's FULL chosen branch (NOT minus already-proven types). The
+ * owner chose to re-request a room's whole required set on each join so the live
+ * token presented to the gate carries that room's complete badge set,
+ * independent of any prior sign-in's token. Fails closed to `BASE_SCOPES` on a
+ * malformed/unsatisfiable policy (the server gate is authoritative and denies).
+ *
+ * The over-disclosure-to-relying-party invariant holds: the requested badges are
+ * exactly ONE satisfying branch of THIS room's policy (OR/threshold rooms still
+ * pick a single branch), so Discreetly only ever receives badges the room it
+ * joins requires - never the whole wallet, never another room's badges.
+ *
+ * `provenTypes` is used ONLY to bias the OR-branch choice toward one the user has
+ * already mostly proven (least NEW disclosure to Minister within the choice); it
+ * does NOT subtract from the requested set.
+ *
+ * INTERIM - the OR/threshold branch is auto-picked (cheapest for this user);
+ * Phase 2 moves that selection to Minister.
+ */
+export function scopesToRequestForRoom(
+  policy: PolicyNode,
+  provenTypes: readonly string[] = [],
+): string[] {
+  let required: string[] | null;
+  try {
+    required = requiredTypesForRoom(policy, new Set(provenTypes), {
+      knownTypes: KNOWN_TYPES,
+    });
+  } catch {
+    required = null;
+  }
+  // null => unsatisfiable/malformed; empty => the room needs no badges. Either
+  // way, request only the base scopes (the gate decides admission).
+  if (required === null || required.length === 0) return [...BASE_SCOPES];
+  return [...BASE_SCOPES, ...badgeScopes(required)];
+}
+
+/**
+ * Whether a room policy offers a genuine OR/threshold choice (more than one
+ * satisfying branch), so the UI should surface the INTERIM "choose a different
+ * proof" affordance.
+ */
+export function roomHasBranchChoice(policy: PolicyNode): boolean {
+  return roomScopeOptions(policy).length > 1;
+}
+
+/** The default (cheapest-for-this-user) branch the join will request. INTERIM. */
+export function defaultRoomBranch(
+  policy: PolicyNode,
+  provenTypes: readonly string[] = [],
+): string[] | null {
+  try {
+    return chooseScopeOption(policy, new Set(provenTypes), { knownTypes: KNOWN_TYPES });
+  } catch {
+    return null;
+  }
 }
