@@ -30,8 +30,7 @@
       "vite": "^6.4.3",
       "ws": "^8.21.0",
       "postcss": "^8.5.10",
-      "underscore": ">=1.13.8",
-      "@minister/client": "file:../minister-client-phase3"
+      "underscore": ">=1.13.8"
     }
   }
 }

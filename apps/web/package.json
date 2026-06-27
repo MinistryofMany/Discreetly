@@ -22,7 +22,7 @@
     "@discreetly/db": "workspace:*",
     "@discreetly/policy": "workspace:*",
     "@discreetly/shared": "workspace:*",
-    "@minister/client": "git+https://github.com/MinistryofMany/minister-client.git#a009051",
+    "@minister/client": "git+https://github.com/MinistryofMany/minister-client.git#65a6a70",
     "@prisma/client": "^6.19.3",
     "@radix-ui/react-avatar": "^1.1.12",
     "@radix-ui/react-checkbox": "^1.3.4",
