@@ -15,12 +15,53 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { prisma } from '@discreetly/db';
+import { checkRateLimit } from '@discreetly/api/rate-limit';
 import type { PolicyNode } from '@discreetly/policy';
 import { scopesToRequestForRoom } from '@/lib/badges';
 import { encodeMinisterPolicy } from '@/lib/minister-policy';
-import { ministerClientForRoomAuth, ROOM_AUTH_FLOW_TTL_MS } from '@/lib/room-auth';
+import {
+  clientIpForRateLimit,
+  ministerClientForRoomAuth,
+  ROOM_AUTH_FLOW_TTL_MS,
+  ROOM_AUTH_START_RATE_LIMIT_MAX,
+  ROOM_AUTH_START_RATE_LIMIT_WINDOW_MS,
+  sweepExpiredRoomAuthFlows,
+} from '@/lib/room-auth';
 
 export async function GET(req: NextRequest): Promise<Response> {
+  // Per-IP abuse limit on this unauthenticated, row-creating endpoint. Reuses
+  // the API's Redis fixed-window limiter (`@discreetly/api/rate-limit`) - the
+  // same atomic counter the transport layer uses - keyed in its own `room-auth`
+  // bucket so it never shares a budget with the tRPC traffic. Fail-closed only
+  // on an explicit limit; a limiter error (e.g. Redis blip) falls open so a real
+  // join is never dropped, matching the API's behaviour.
+  const ip = clientIpForRateLimit(req);
+  try {
+    const limit = await checkRateLimit(
+      `room-auth:start:${ip}`,
+      ROOM_AUTH_START_RATE_LIMIT_MAX,
+      ROOM_AUTH_START_RATE_LIMIT_WINDOW_MS,
+    );
+    if (!limit.allowed) {
+      const retryAfter = Math.ceil(limit.resetMs / 1000);
+      return NextResponse.json(
+        { error: 'rate_limited', retryAfterSeconds: retryAfter },
+        { status: 429, headers: { 'Retry-After': String(retryAfter) } },
+      );
+    }
+  } catch (error) {
+    console.warn(
+      'room-auth start rate limit check failed; allowing request:',
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+
+  // Opportunistic prune of expired flow rows so this unauthenticated endpoint
+  // cannot let short-lived rows accumulate unbounded. Indexed on `expiresAt`,
+  // scoped to already-expired rows only, and best-effort (a sweep failure never
+  // blocks a legitimate start).
+  await sweepExpiredRoomAuthFlows();
+
   const roomId = req.nextUrl.searchParams.get('roomId');
   if (!roomId) {
     return NextResponse.json({ error: 'roomId is required' }, { status: 400 });

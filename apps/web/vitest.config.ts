@@ -1,5 +1,24 @@
 import { defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+
+// Load the repo-root .env into process.env for the DB-backed unit tests (the
+// room-auth flow sweep talks to the real dev Postgres, mirroring packages/db's
+// smoke test). Only vars not already set are applied, so an explicit shell env
+// still wins. happy-dom tests ignore these vars.
+const NEEDED = ['DATABASE_URL', 'REDIS_URL', 'RATE_LIMIT_ENABLED'] as const;
+try {
+  const raw = readFileSync(fileURLToPath(new URL('../../.env', import.meta.url)), 'utf8');
+  for (const line of raw.split('\n')) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
+    if (!m) continue;
+    const [, key, rawVal] = m;
+    if (!(NEEDED as readonly string[]).includes(key) || process.env[key] !== undefined) continue;
+    process.env[key] = rawVal.replace(/^["']|["']$/g, '');
+  }
+} catch {
+  // No .env (e.g. CI provides env directly); DB-backed tests read process.env.
+}
 
 export default defineConfig({
   resolve: {

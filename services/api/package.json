@@ -5,7 +5,8 @@
   "type": "module",
   "main": "./src/server.ts",
   "exports": {
-    ".": "./src/server.ts"
+    ".": "./src/server.ts",
+    "./rate-limit": "./src/middleware/rate-limit.ts"
   },
   "scripts": {
     "dev": "tsx watch --tsconfig tsconfig.server.json src/server.ts",

@@ -17,7 +17,7 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { prisma } from '@discreetly/db';
-import { ministerClientForRoomAuth } from '@/lib/room-auth';
+import { ministerClientForRoomAuth, sweepExpiredRoomAuthFlows } from '@/lib/room-auth';
 
 function backToRoom(roomId: string, params: Record<string, string>): Response {
   const base = (process.env.AUTH_URL ?? 'http://localhost:3001').replace(/\/$/, '');
@@ -36,6 +36,10 @@ export async function GET(req: NextRequest): Promise<Response> {
   const state = req.nextUrl.searchParams.get('state');
 
   if (!state) return errorResponse('missing state');
+
+  // Opportunistic prune of expired flow rows (indexed, expired-only, best-
+  // effort) so abandoned flows can't accumulate. Mirrors the start route.
+  await sweepExpiredRoomAuthFlows();
 
   // Atomically consume the flow by `state`: null the PKCE secret only if it is
   // still set, so two concurrent callbacks for the same `state` can never both

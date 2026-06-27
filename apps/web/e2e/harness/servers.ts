@@ -137,6 +137,7 @@ export async function startServers(): Promise<RunningServers> {
     env: {
       ...process.env,
       DATABASE_URL: E2E_DATABASE_URL,
+      REDIS_URL,
       NEXT_PUBLIC_API_URL: API_URL,
       NEXT_PUBLIC_API_WS_URL: API_WS_URL,
       AUTH_URL: WEB_URL,
@@ -145,6 +146,9 @@ export async function startServers(): Promise<RunningServers> {
       MINISTER_ISSUER: MOCK_ISSUER,
       MINISTER_CLIENT_ID: MOCK_CLIENT_ID,
       MINISTER_CLIENT_SECRET: MOCK_CLIENT_SECRET,
+      // Disable the per-IP room-auth/start limiter so multi-room disclosure e2e
+      // bursts never flake on the limit (matches the API process above).
+      RATE_LIMIT_ENABLED: 'false',
     },
   });
   pipe(web, 'web');

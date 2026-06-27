@@ -56,6 +56,27 @@ describe('checkRateLimit', () => {
     expect(bAllowed.allowed).toBe(true);
   });
 
+  it.skipIf(!enabled)(
+    'rejects the Nth room-auth/start call in the window (audit L-2)',
+    async () => {
+      // Mirror the `/api/room-auth/start` limiter: the same fixed-window check,
+      // the `room-auth:start:<ip>` key shape, and a small max standing in for
+      // RATE_LIMIT_MUTATION_MAX. The first `max` calls pass; call max+1 (the Nth
+      // in the window) is rejected with a positive Retry-After window.
+      const max = 3;
+      const ip = `1.2.3.${Math.floor(Math.random() * 255)}`;
+      const key = `room-auth:start:${ip}:${Date.now()}`;
+      for (let i = 0; i < max; i++) {
+        const r = await checkRateLimit(key, max, 10_000);
+        expect(r.allowed).toBe(true);
+      }
+      const nth = await checkRateLimit(key, max, 10_000);
+      expect(nth.allowed).toBe(false);
+      expect(nth.remaining).toBe(0);
+      expect(nth.resetMs).toBeGreaterThan(0);
+    },
+  );
+
   it('is a no-op when disabled', async () => {
     // Force the disabled path by mutating the cached config object.
     const cfg = getConfig() as { RATE_LIMIT_ENABLED: boolean };
