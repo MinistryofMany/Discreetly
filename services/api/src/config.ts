@@ -17,6 +17,13 @@ const schema = z.object({
   MINISTER_CLIENT_ID: z.string().min(1),
   API_PORT: z.coerce.number().default(3002),
 
+  // H-1 (durable proven-badge TTL). A durably-proven BARE type satisfies a bare
+  // policy leaf only if its first proof is within this many days; past it, the
+  // gate forces a live re-prove. Constrained leaves are unaffected (F-D already
+  // re-proves them). `0` (or any value <= 0) disables expiry = proofs are
+  // ever-valid (the `feat/per-room-badge-disclosure` behavior). Default 30.
+  PROVEN_BADGE_TTL_DAYS: z.coerce.number().int().default(30),
+
   // Transport-layer (per-IP) abuse rate limiting. Disabled in tests/e2e to
   // avoid flakes. Coercion: env vars arrive as strings.
   RATE_LIMIT_ENABLED: z

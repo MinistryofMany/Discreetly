@@ -15,6 +15,9 @@
  */
 import { prisma } from '@discreetly/db';
 import { toField } from '../gate/join-nullifier.js';
+import { getConfig } from '../config.js';
+
+const MS_PER_DAY = 86_400_000;
 
 /**
  * A minimal Prisma client surface (the base client or an interactive-transaction
@@ -36,11 +39,47 @@ export function userKeyForSub(sub: string): string {
   return toField(sub).toString();
 }
 
-/** Badge types this user has durably proven, for the given verified `sub`. */
-export async function loadProvenTypes(sub: string): Promise<string[]> {
+export interface LoadProvenOpts {
+  /**
+   * Durable-proof TTL in days. A proven type is returned only if its first proof
+   * is within this many days; `<= 0` (or `undefined`) disables expiry (proofs are
+   * ever-valid). Defaults to `PROVEN_BADGE_TTL_DAYS`.
+   */
+  ttlDays?: number;
+  /** Current time in ms (injected for deterministic tests). Defaults to now. */
+  now?: number;
+}
+
+/**
+ * Badge types this user has durably proven, for the given verified `sub`,
+ * filtered by the durable-proof TTL (H-1).
+ *
+ * SECURITY (H-1): a proven BARE type satisfies a bare leaf only while its first
+ * proof (`firstProvenAt`) is within `ttlDays`. Once a proof ages past the TTL it
+ * is dropped here, BEFORE `evaluateWithProven`, so the gate sees it as
+ * un-proven and forces a live re-prove. With `ttlDays <= 0` (or unset) no
+ * filtering happens and proofs are ever-valid - identical to the non-TTL branch.
+ * Constrained leaves are unaffected either way (F-D re-proves them live).
+ */
+export async function loadProvenTypes(sub: string, opts: LoadProvenOpts = {}): Promise<string[]> {
   const userKey = userKeyForSub(sub);
+  const ttlDays = opts.ttlDays ?? getConfig().PROVEN_BADGE_TTL_DAYS;
+  const now = opts.now ?? Date.now();
+
+  // No expiry: return every proven type (the ever-valid behavior).
+  if (!Number.isFinite(ttlDays) || ttlDays <= 0) {
+    const rows = await prisma.provenBadge.findMany({
+      where: { userKey },
+      select: { badgeType: true },
+    });
+    return rows.map((r) => r.badgeType);
+  }
+
+  // TTL active: only proofs first recorded at or after the cutoff still count.
+  // Filtered at the DB layer so an expired proof never reaches the gate.
+  const cutoff = new Date(now - ttlDays * MS_PER_DAY);
   const rows = await prisma.provenBadge.findMany({
-    where: { userKey },
+    where: { userKey, firstProvenAt: { gte: cutoff } },
     select: { badgeType: true },
   });
   return rows.map((r) => r.badgeType);

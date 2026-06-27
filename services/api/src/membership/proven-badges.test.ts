@@ -59,3 +59,40 @@ describe('proven-badges durable store', () => {
     expect(userKeyForSub(SUB_A)).not.toBe(userKeyForSub(SUB_B));
   });
 });
+
+// H-1: durable-proof TTL. A proof older than the TTL no longer satisfies a bare
+// leaf (it is dropped before the gate, forcing a live re-prove); within the TTL
+// it still counts; `ttlDays <= 0` disables expiry.
+describe('proven-badges TTL (H-1)', () => {
+  const SUB_TTL = `pb-ttl-${Date.now()}`;
+  const key = userKeyForSub(SUB_TTL);
+
+  afterAll(async () => {
+    await prisma.provenBadge.deleteMany({ where: { userKey: key } });
+  });
+
+  it('drops a proof older than the TTL but keeps one within it', async () => {
+    await recordProvenTypes(SUB_TTL, ['age-over-18']);
+    // Backdate the proof to 40 days ago.
+    const fortyDaysAgo = new Date(Date.now() - 40 * 86_400_000);
+    await prisma.provenBadge.update({
+      where: { userKey_badgeType: { userKey: key, badgeType: 'age-over-18' } },
+      data: { firstProvenAt: fortyDaysAgo },
+    });
+
+    // With a 30-day TTL the 40-day-old proof is excluded (forces a live re-prove).
+    expect(await loadProvenTypes(SUB_TTL, { ttlDays: 30 })).toEqual([]);
+    // With a 60-day TTL the same proof is still within window and counts.
+    expect(await loadProvenTypes(SUB_TTL, { ttlDays: 60 })).toEqual(['age-over-18']);
+    // TTL disabled (<= 0): ever-valid, the proof always counts.
+    expect(await loadProvenTypes(SUB_TTL, { ttlDays: 0 })).toEqual(['age-over-18']);
+  });
+
+  it('counts a fresh proof under the default TTL window', async () => {
+    await recordProvenTypes(SUB_TTL, ['residency-country']); // firstProvenAt = now
+    const within = await loadProvenTypes(SUB_TTL, { ttlDays: 30 });
+    expect(within).toContain('residency-country');
+    // The 40-day-old age-over-18 from the prior test stays excluded at 30 days.
+    expect(within).not.toContain('age-over-18');
+  });
+});
