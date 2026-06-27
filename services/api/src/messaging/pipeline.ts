@@ -132,9 +132,10 @@ export async function sendMessage(input: SendInput): Promise<SendResult> {
 
   // Ring-buffer prune: keep only this room's newest MAX_ROOM_MESSAGES rows.
   // Runs after the insert so the just-stored message counts toward the window.
-  // Deletes only the oldest rows (outside the RLN collision window) — see
-  // history.ts for the anonymity argument.
-  await pruneRoomHistory(room.id);
+  // Deletes only the oldest rows outside the RLN collision window: `currentEpoch`
+  // (the same epoch the slashing path uses) is threaded in so rows in the live
+  // window (`currentEpoch ± 1`) are never pruned — see history.ts (M1).
+  await pruneRoomHistory(room.id, currentEpoch);
 
   const message: BroadcastMessage = {
     id: stored.id,

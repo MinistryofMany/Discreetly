@@ -16,17 +16,33 @@ export const MAX_ROOM_MESSAGES = 1000;
  * (tie-broken by `id` for a total, stable order). Deletes only the oldest rows
  * beyond the cap; a no-op once the room is at or under the cap.
  *
- * Anonymity note: this only ever deletes the OLDEST rows. RLN collision
- * detection (`collision.ts`) reads only messages in the current epoch window
- * (`currentEpoch ± 1`), which are by definition the newest rows and so are the
- * last to be pruned — never evicted while still in the live window. The prune
- * touches only the `Message` table; it never affects membership (the Merkle
- * tree built from `MembershipLeaf`) or rate-limit accounting.
+ * Anonymity / RLN-slashing safety (audit finding M1): a row in the live RLN
+ * collision window (`epoch` within `currentEpoch ± 1`) is NEVER pruned, even if
+ * more than `cap` strictly-newer rows exist. Collision detection
+ * (`collision.ts`) needs the prior colliding row of the same `(roomId, epoch,
+ * nullifier)` to still exist to slash a double-signal; the verifier accepts any
+ * proof whose `epoch` is within `currentEpoch ± 1` (`verify-message.ts`), so the
+ * three epochs `currentEpoch-1, currentEpoch, currentEpoch+1` are live. The
+ * delete `where` therefore additionally requires `epoch < currentEpoch - 1`:
+ * rows in the live window are excluded from pruning unconditionally rather than
+ * relying on the implicit, config-sensitive assumption that the newest `cap`
+ * rows always cover the live window. A room may transiently hold slightly more
+ * than `cap` rows when the newest include live-window rows that cannot be
+ * pruned; this is bounded and acceptable. The count-based prune still applies to
+ * rows outside the live window.
+ *
+ * `currentEpoch` MUST be the same value the slashing path uses — at the
+ * `pipeline.ts` call site that is `Math.floor(Date.now() / room.rateLimit)`,
+ * i.e. the just-inserted message's epoch. The caller threads it in.
+ *
+ * The prune touches only the `Message` table; it never affects membership (the
+ * Merkle tree built from `MembershipLeaf`) or rate-limit accounting.
  *
  * Accepts an optional transaction client so it can join the insert transaction.
  */
 export async function pruneRoomHistory(
   roomId: string,
+  currentEpoch: bigint,
   cap: number = MAX_ROOM_MESSAGES,
   client: Prisma.TransactionClient | typeof prisma = prisma,
 ): Promise<{ pruned: number }> {
@@ -46,9 +62,15 @@ export async function pruneRoomHistory(
   // Delete rows older than the boundary by (createdAt, id) — i.e. strictly
   // before the kept window. Rows with the same createdAt but a smaller id than
   // the boundary are also older in the total order and are pruned.
+  //
+  // RLN safety (M1): AND a hard guard that the row's epoch is strictly older
+  // than the live collision window. `epoch < currentEpoch - 1` keeps every row
+  // in `currentEpoch-1 .. currentEpoch+1` regardless of count/recency, so the
+  // prior colliding row is always available to the slashing path.
   const result = await client.message.deleteMany({
     where: {
       roomId,
+      epoch: { lt: currentEpoch - 1n },
       OR: [
         { createdAt: { lt: edge.createdAt } },
         { createdAt: edge.createdAt, id: { lt: edge.id } },
