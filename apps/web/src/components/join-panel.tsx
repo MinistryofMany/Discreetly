@@ -2,13 +2,11 @@
 
 import * as React from 'react';
 import { toast } from 'sonner';
-import { signIn } from 'next-auth/react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
 import { useTRPC } from '@/lib/trpc';
 import { useIdentity } from '@/lib/identity-context';
-import { computeEligibility, scopesToRequestForRoom } from '@/lib/badges';
-import { encodeMinisterPolicy } from '@/lib/minister-policy';
+import { computeEligibility } from '@/lib/badges';
 import { asPolicyNode, type PublicRoom } from '@/lib/room-types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,9 +25,17 @@ const JOIN_REASONS: Record<string, string> = {
 
 export function JoinPanel({
   room,
+  roomToken,
   onJoined,
 }: {
   room: PublicRoom;
+  /**
+   * The FRESH per-room id_token minted by the SDK disclosure flow, picked up by
+   * the parent RoomView from the callback redirect. Used for the join INSTEAD of
+   * the badge-free global session token. Null until a per-room disclosure has run
+   * (open rooms / global login fall back to the session token).
+   */
+  roomToken: string | null;
   onJoined: () => void;
 }) {
   const trpc = useTRPC();
@@ -42,43 +48,33 @@ export function JoinPanel({
 
   const policy = asPolicyNode(room.accessPolicy);
 
-  // Authoritative durable proven set for this user (server verifies the id_token
-  // from the Authorization header and keys on the verified sub). Refreshed after
-  // a successful join so downstream consumers stay current.
-  const provenQuery = useQuery({
-    ...trpc.membership.provenBadges.queryOptions(),
-    enabled: Boolean(session?.idToken),
-  });
+  // The id_token forwarded to the gate: prefer the fresh per-room token (carries
+  // this room's disclosed badges), else the global session token.
+  const idTokenForJoin = roomToken ?? session?.idToken ?? null;
 
+  // Eligibility hint: evaluate the disclosed badges the UI knows about. With a
+  // fresh per-room token we can't cheaply decode it client-side, so the hint uses
+  // the global session badges; the server gate is authoritative on join.
   const eligibility = computeEligibility(policy, session?.ministerBadges ?? []);
 
   /**
-   * Trigger a room-scoped Minister sign-in (via the THIRD `signIn` arg) that
-   * requests the UNION of this room's required badge types as `scope` AND sends
-   * the room's policy AST as the `minister_policy` param. Minister - which knows
-   * each type's anonymity-set size - selects the minimal satisfying subset to
-   * disclose (and lets the user override at consent); Discreetly no longer picks
-   * an OR/threshold branch itself. Fails closed to base scopes (server denies)
-   * on a malformed/unsatisfiable policy.
+   * Begin the per-room disclosure flow (Phase 3 / Path B). Navigates to the RP
+   * "start join" route, which mints PKCE+state+nonce, persists flow state, and
+   * redirects to Minister with the room's UNION scope + `minister_policy`.
+   * Minister discloses one minimal satisfying set and mints a fresh per-room
+   * id_token; the callback hands it back via `?roomAuthPickup`.
    *
-   * Over-disclosure-to-RP invariant: even though the union scope lists every
-   * candidate type, Minister discloses only one satisfying subset of THIS room's
-   * policy - never the whole wallet, never another room's badges. If the policy
-   * cannot be encoded, the `minister_policy` param is omitted (fail-closed) and
-   * Minister falls back to per-scope disclosure; the server gate stays
-   * authoritative.
+   * Over-disclosure-to-RP: the authorize requests the room's UNION scope, but
+   * Minister discloses only ONE minimal satisfying set (Phase 2), and the gate
+   * sees only that token - never the whole wallet, never another room's badges.
    */
   function signInForRoom(): void {
-    const scope = scopesToRequestForRoom(policy);
-    const ministerPolicy = encodeMinisterPolicy(policy);
-    const params: Record<string, string> = { scope: scope.join(' ') };
-    if (ministerPolicy !== null) params.minister_policy = ministerPolicy;
-    void signIn('minister', { redirectTo: `/rooms/${room.id}` }, params);
+    window.location.href = `/api/room-auth/start?roomId=${encodeURIComponent(room.id)}`;
   }
 
   async function handleJoin() {
-    if (!session?.idToken) {
-      toast.error('Sign in with Minister first.');
+    if (!idTokenForJoin) {
+      toast.error('Sign in for this room first to disclose the required badges.');
       return;
     }
     if (!identity) {
@@ -89,24 +85,22 @@ export function JoinPanel({
     try {
       const res = (await joinMutation.mutateAsync({
         roomId: room.id,
-        idToken: session.idToken,
+        idToken: idTokenForJoin,
         identityCommitment: identity.commitment.toString(),
         deviceLabel: deviceLabel.trim() || undefined,
       })) as { ok: boolean; reason?: string };
 
       if (res.ok) {
         toast.success('Joined the room.');
-        // Refresh the proven set: the join just recorded the disclosed types.
-        void provenQuery.refetch();
         onJoined();
       } else {
         toast.error(JOIN_REASONS[res.reason ?? ''] ?? `Join failed: ${res.reason}`);
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      // Fail-closed expiry UX: the forwarded id_token is short-lived (~10 min)
-      // with no refresh, so an expired-token join error re-prompts a room-scoped
-      // sign-in (same delta scopes) instead of a dead end.
+      // Fail-closed expiry UX: the per-room id_token is short-lived (~10 min), so
+      // an expired-token join error re-prompts a room-scoped sign-in instead of a
+      // dead end.
       if (/expired|exp\b/i.test(message)) {
         toast.error('Your sign-in expired. Re-authenticating for this room...');
         signInForRoom();
@@ -131,16 +125,20 @@ export function JoinPanel({
               {eligibility.requiredScopes.map((scope) => (
                 <Badge
                   key={scope}
-                  variant={eligibility.satisfied ? 'success' : 'outline'}
+                  variant={roomToken || eligibility.satisfied ? 'success' : 'outline'}
                 >
                   {scope.replace(/^badge:/, '')}
                 </Badge>
               ))}
             </div>
-            {!eligibility.satisfied ? (
+            {roomToken ? (
+              <p className="text-xs text-emerald-600">
+                Disclosed for this room (server re-verifies on join).
+              </p>
+            ) : !eligibility.satisfied ? (
               <p className="text-xs text-amber-600">
-                Your session does not currently disclose the required badges. The
-                server is authoritative - try re-signing in to disclose them.
+                Your session does not currently disclose the required badges. Sign
+                in for this room to disclose them (the server is authoritative).
               </p>
             ) : (
               <p className="text-xs text-emerald-600">
@@ -155,10 +153,17 @@ export function JoinPanel({
           </p>
         )}
 
-        {!session ? (
-          // Room-scoped sign-in: request this room's required badge types (and its
-          // policy, so Minister selects the minimal satisfying set), not the whole
-          // wallet. A non-room sign-in lives in the header.
+        {/*
+          Two independent auth concepts under Path B:
+            - the FRESH per-room id_token (`roomToken`), produced by the SDK
+              disclosure flow, carries this room's disclosed badges;
+            - the global Auth.js session token (`session.idToken`) is badge-free.
+          The per-room flow does NOT create an Auth.js session, so the Join
+          button is gated on having SOME usable id_token (per-room or session)
+          plus an unlocked identity - not on the presence of a global session.
+        */}
+        {!idTokenForJoin ? (
+          // No usable token yet: run the SDK disclosure flow for this room.
           <Button onClick={signInForRoom}>Sign in with Minister</Button>
         ) : (
           <>
@@ -176,9 +181,9 @@ export function JoinPanel({
               <Button onClick={handleJoin} disabled={joining || !identity}>
                 {joining ? 'Joining...' : 'Join'}
               </Button>
-              {eligibility.requiredScopes.length > 0 && !eligibility.satisfied ? (
+              {eligibility.requiredScopes.length > 0 && !roomToken ? (
                 <Button variant="outline" onClick={signInForRoom}>
-                  Re-sign in to disclose badges
+                  Sign in to disclose badges
                 </Button>
               ) : null}
             </div>

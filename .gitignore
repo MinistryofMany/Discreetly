@@ -5,6 +5,7 @@ node_modules/
 .pnp.js
 
 # Build outputs
+.prisma-engines/
 dist/
 build/
 out/

@@ -1,19 +1,24 @@
 /**
- * Per-room badge disclosure (Phase 1, model 2b) end-to-end.
+ * Per-room badge disclosure (Phase 3 / Path B) end-to-end - the INLINE,
+ * grant-based, SDK-run model.
  *
- * Model 2b: each room join requests from Minister that room's FULL required badge
- * set (a single chosen branch), NOT the not-yet-proven delta - never the whole
- * wallet and never another room's badges. The mock issuer records the authorize
- * `scope` (`/test/authorize-log`) and mints exactly the consented-scope badges,
- * so the requested scope is the ground truth for "what was disclosed". DB truth
- * (MembershipLeaf, ProvenBadge) is asserted via the e2e Prisma client.
+ * Each room-join runs the framework-agnostic `@minister/client` auth-code+PKCE
+ * flow at dedicated RP routes (`/api/room-auth/start` + `/api/room-auth/callback`),
+ * NOT Auth.js's third-`signIn`-arg merge. The start route requests the room's
+ * UNION badge scope plus a `minister_policy` AST; the mock issuer (simulating
+ * Minister's grant) discloses ONE minimal satisfying set and mints a FRESH
+ * per-room id_token; the callback verifies it and hands it back to the gate,
+ * which evaluates the room policy INLINE on that token alone.
  *
- * The cross-room join works despite next-auth v5 beta.31 NOT updating the stored
- * `Account.id_token` on a second sign-in for an already-linked account: the
- * Minister provider's `profile()` callback captures the fresh token at the OAuth
- * callback, records the disclosed badge TYPES into the durable `ProvenBadge`
- * store, and refreshes `Account.id_token` - so the gate's (live token) UNION
- * (durable proven types) admits the second room.
+ * There is NO durable RP badge store: the `ProvenBadge` table has been DROPped,
+ * so a later room with a not-yet-disclosed-this-flow badge requires a fresh
+ * room-scoped sign-in and admits on the fresh token. After admission, Semaphore
+ * membership (`MembershipLeaf`) carries access.
+ *
+ * The over-disclosure-to-RP invariant is asserted via the mock issuer's
+ * authorize log (the requested scope) and the minted disclosure: a UNION scope
+ * never becomes a UNION disclosure - Minister discloses exactly one minimal
+ * satisfying set per room.
  */
 import { test, expect, type Page } from '@playwright/test';
 import {
@@ -25,8 +30,8 @@ import {
   lastAuthorizeBadgeScopes,
   lastAuthorizeScope,
   lastAuthorizeHasMinisterPolicy,
+  grantedTypesFor,
 } from './harness/helpers.js';
-import { userKeyForSub } from './harness/gate.js';
 
 const ID_PASSWORD = 'test-password-123';
 
@@ -76,13 +81,38 @@ async function openRoomUnlocked(page: Page, roomId: string): Promise<void> {
   await page.getByRole('button', { name: /^unlock$/i }).click();
 }
 
-test('joining Room(A) requests only A badge scope; a later Room(A AND B) requests A AND B (2b full set) and still joins', async ({
+/**
+ * Run the per-room disclosure flow for `roomId`: click the room-scoped sign-in,
+ * consent at the mock issuer, and land back on the room with the fresh per-room
+ * token picked up. After this returns the JoinPanel shows the "Join" button.
+ */
+async function discloseForRoom(page: Page, roomId: string, email: string): Promise<void> {
+  await openRoomUnlocked(page, roomId);
+  // Either the first-time "Sign in with Minister" or the "Sign in to disclose
+  // badges" button starts the SDK flow; both navigate to /api/room-auth/start.
+  const signIn = page.getByRole('button', { name: /sign in (with minister|to disclose badges)/i });
+  await signIn.first().click();
+  await consent(page, email);
+  // Back on the room with `?roomAuthPickup=...`; RoomView picks the fresh
+  // per-room token up ONCE and stashes it in sessionStorage keyed by roomId.
+  // Wait for that stash to land BEFORE the unlock reload (the pickup row is
+  // single-use; navigating away before it lands would lose the token).
+  await page.waitForURL(new RegExp(`/rooms/${roomId}`), { timeout: 30_000 });
+  await page.waitForFunction(
+    (key) => window.sessionStorage.getItem(key) !== null,
+    `roomToken:${roomId}`,
+    { timeout: 30_000 },
+  );
+  // Re-unlock (the OIDC round-trip dropped the in-memory identity) to reveal the
+  // Join button; RoomView restores the stashed token on remount.
+  await openRoomUnlocked(page, roomId);
+}
+
+test('join Room(A) discloses only {A}; a later Room(A AND B) needs a fresh disclosure of {A,B} and admits inline', async ({
   page,
 }) => {
   const db = getPrisma();
-  const email = `disc-delta-${Date.now()}@example.com`;
-  const sub = subFor(email);
-  const userKey = userKeyForSub(sub);
+  const email = `disc-inline-${Date.now()}@example.com`;
 
   const roomA = await createRoom({
     name: 'Age Room',
@@ -97,192 +127,108 @@ test('joining Room(A) requests only A badge scope; a later Room(A AND B) request
     },
   });
 
-  // --- Spec 1: clean session joins Room(A). Identity first, then room-scoped sign-in. ---
   await createIdentity(page, ID_PASSWORD);
-  await openRoomUnlocked(page, roomA.id);
-  // The room-scoped "Sign in with Minister" requests only A's badge.
-  await page.getByRole('button', { name: /sign in with minister/i }).click();
-  await consent(page, email);
 
-  // ASSERT: the authorize requested exactly badge:age-over-18 (and none of the
-  // other four badge scopes).
+  // --- Room A: disclose {age-over-18} and join inline. ---
+  await discloseForRoom(page, roomA.id, email);
+  // The authorize requested exactly badge:age-over-18.
   expect(await lastAuthorizeBadgeScopes()).toEqual(['badge:age-over-18']);
-
-  // Join Room(A): unlock again (the OIDC round-trip dropped in-memory identity).
-  await openRoomUnlocked(page, roomA.id);
   await page.getByRole('button', { name: /^join$/i }).click();
   await expect.poll(() => db.membershipLeaf.count({ where: { roomId: roomA.id } })).toBe(1);
 
-  // ProvenBadge now records age-over-18 for this user.
-  await expect
-    .poll(() => db.provenBadge.count({ where: { userKey, badgeType: 'age-over-18' } }))
-    .toBe(1);
-
-  // --- Spec 2: join Room(A AND B). Model 2b -> request the room's FULL set. ---
-  await openRoomUnlocked(page, roomB.id);
-  // The current session token proves only A, so the room is not satisfied yet;
-  // the JoinPanel offers a room-scoped re-sign-in requesting the room's FULL
-  // required set (A AND B), not just the not-yet-proven delta.
-  await page.getByRole('button', { name: /re-sign in to disclose badges/i }).click();
-  await consent(page, email);
-
-  // ASSERT (2b): the new authorize requested the room's FULL set -
-  // age-over-18 AND residency-country - and NONE of the other three badge scopes.
+  // --- Room B (A AND B): a fresh per-room disclosure of the FULL set. ---
+  // No durable store carries A forward, so the gate needs the fresh token to
+  // carry BOTH types. The start route requests the room's UNION scope.
+  await discloseForRoom(page, roomB.id, email);
+  // ASSERT: the authorize requested the room's FULL set (A AND B) and NOTHING
+  // else - one minimal satisfying set, never the whole wallet.
   expect(await lastAuthorizeBadgeScopes()).toEqual([
     'badge:age-over-18',
     'badge:residency-country',
   ]);
+  expect(await lastAuthorizeHasMinisterPolicy()).toBe(true);
 
-  // Join Room(B): the gate admits via (live token: age-over-18, residency-country)
-  // UNION (durable proven set). The fresh token's badges were captured at the
-  // OAuth callback (ProvenBadge + refreshed Account.id_token), so even though
-  // next-auth froze the first token, the second room's badges reach the gate.
-  // Unlock again post-redirect, then join.
-  await openRoomUnlocked(page, roomB.id);
+  // Join Room B inline on the fresh token carrying {age-over-18, residency-country}.
   await page.getByRole('button', { name: /^join$/i }).click();
   await expect.poll(() => db.membershipLeaf.count({ where: { roomId: roomB.id } })).toBe(1);
-
-  // Both badge types are now durably proven for this user (exactly one row each).
-  await expect.poll(() => db.provenBadge.count({ where: { userKey } })).toBe(2);
-  expect(
-    await db.provenBadge.count({ where: { userKey, badgeType: 'age-over-18' } }),
-  ).toBe(1);
-  expect(
-    await db.provenBadge.count({ where: { userKey, badgeType: 'residency-country' } }),
-  ).toBe(1);
 });
 
-test('F-D: a durable bare-type proof does NOT satisfy a CONSTRAINED leaf - the gate forces a live re-prove', async ({
+test('NO durable RP badge store exists: the ProvenBadge table is gone', async () => {
+  const db = getPrisma();
+  // The model was deleted and DROPped; the Prisma client has no `provenBadge`
+  // delegate, and the table does not exist in the database.
+  expect((db as unknown as Record<string, unknown>).provenBadge).toBeUndefined();
+  const rows = await db.$queryRawUnsafe<Array<{ exists: boolean }>>(
+    `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'ProvenBadge') AS exists`,
+  );
+  expect(rows[0]?.exists).toBe(false);
+});
+
+test('a CONSTRAINED leaf admits only via the live VC in the fresh token (F-D, inline)', async ({
   page,
 }) => {
-  // The single most security-critical invariant of the durable store: it carries
-  // only a badge TYPE (no attribute values, no issued-at), so it may satisfy a
-  // BARE type-only leaf but NEVER a constrained (`where`/`maxAgeDays`) one. A
-  // constrained leaf must always re-prove against a live VC. We:
-  //   1. join Room A = bare `age-over-18` (records the durable type),
-  //   2. overwrite the live session token with a BADGE-FREE global sign-in (the
-  //      durable `age-over-18` survives; the live token no longer carries it),
-  //   3. attempt Room B = CONSTRAINED `age-over-18` (`where: { threshold: 18 }`):
-  //      the durable type alone must DENY (no live VC), then
-  //      re-sign-in to disclose the live VC and confirm it JOINS.
+  // F-D is automatic under Path B: with no durable union, every leaf - bare or
+  // constrained - is checked against the just-verified live token. A constrained
+  // `age-over-18` (where: { threshold: 18 }) admits because the mock VC carries
+  // that attribute; the same fresh-token flow supplies it.
   const db = getPrisma();
   const email = `disc-fd-${Date.now()}@example.com`;
-  const sub = subFor(email);
-  const userKey = userKeyForSub(sub);
 
-  const roomA = await createRoom({
-    name: 'Bare Age Room',
-    slug: unique('bare-age'),
-    accessPolicy: { badge: { type: 'age-over-18' } },
-  });
-  const roomB = await createRoom({
+  const room = await createRoom({
     name: 'Constrained Age Room',
     slug: unique('constrained-age'),
-    // Constrained leaf: predicates on the `threshold` attribute, so it can be
-    // satisfied ONLY by a live VC carrying that attribute - never by the durable
-    // (attribute-less) proven set. The mock `age-over-18` VC carries
-    // `{ threshold: 18 }`, so a live re-prove satisfies it.
     accessPolicy: { badge: { type: 'age-over-18', where: { threshold: 18 } } },
   });
 
-  // --- Step 1: join Room A (bare). Records the durable `age-over-18` type. ---
   await createIdentity(page, ID_PASSWORD);
-  await openRoomUnlocked(page, roomA.id);
-  await page.getByRole('button', { name: /sign in with minister/i }).click();
-  await consent(page, email);
-  await openRoomUnlocked(page, roomA.id);
-  await page.getByRole('button', { name: /^join$/i }).click();
-  await expect.poll(() => db.membershipLeaf.count({ where: { roomId: roomA.id } })).toBe(1);
-  await expect
-    .poll(() => db.provenBadge.count({ where: { userKey, badgeType: 'age-over-18' } }))
-    .toBe(1);
-
-  // --- Step 2: badge-free global sign-in overwrites the live session token. ---
-  // The durable proof persists (record-only, never removed); the live token now
-  // carries NO `age-over-18` VC, so the only possible source for Room B's
-  // constrained leaf would be the (insufficient) durable set. Sign out first (we
-  // are still signed in from the Room A flow), then do the badge-free global
-  // sign-in from the landing CTA. The `profile()` capture refreshes the stored
-  // `Account.id_token` to this badge-free token.
-  await page.goto('/');
-  await page.getByRole('button', { name: /sign out/i }).click();
-  await expect(page.getByRole('button', { name: /sign in with minister/i })).toBeVisible({
-    timeout: 30_000,
-  });
-  await page.getByRole('button', { name: /sign in with minister/i }).first().click();
-  await consent(page, email);
-  expect(await lastAuthorizeScope()).toBe('openid profile');
-  // Durable proof is still present after the badge-free sign-in.
-  expect(await db.provenBadge.count({ where: { userKey, badgeType: 'age-over-18' } })).toBe(1);
-
-  // --- Step 3a: attempt Room B with NO live VC. The durable type must NOT
-  // satisfy the constrained leaf - the server gate denies (F-D). ---
-  await openRoomUnlocked(page, roomB.id);
-  await page.getByRole('button', { name: /^join$/i }).click();
-  await expect(page.getByText(/do not satisfy this room/i)).toBeVisible({ timeout: 30_000 });
-  // Hard DB truth: no leaf was created for Room B by the durable-only attempt.
-  await expect.poll(() => db.membershipLeaf.count({ where: { roomId: roomB.id } })).toBe(0);
-
-  // --- Step 3b: re-sign-in to disclose the LIVE `age-over-18` VC. Now the
-  // constrained leaf is satisfied by the live VC and the join succeeds. ---
-  await openRoomUnlocked(page, roomB.id);
-  await page.getByRole('button', { name: /re-sign in to disclose badges/i }).click();
-  await consent(page, email);
+  await discloseForRoom(page, room.id, email);
   expect(await lastAuthorizeBadgeScopes()).toEqual(['badge:age-over-18']);
-  await openRoomUnlocked(page, roomB.id);
   await page.getByRole('button', { name: /^join$/i }).click();
-  await expect.poll(() => db.membershipLeaf.count({ where: { roomId: roomB.id } })).toBe(1);
+  await expect.poll(() => db.membershipLeaf.count({ where: { roomId: room.id } })).toBe(1);
 });
 
-test('a missing required badge denies: no leaf, no ProvenBadge', async ({ page }) => {
+test('a missing required badge denies inline: no leaf is created', async ({ page }) => {
   const db = getPrisma();
   const email = `disc-deny-${Date.now()}@example.com`;
-  const sub = subFor(email);
-  const userKey = userKeyForSub(sub);
 
-  // Room requires invite-code, but we will disclose NONE (sign in globally,
-  // badge-free) and attempt to join.
+  // Room requires invite-code; the user signs in globally (badge-free) and
+  // attempts to join WITHOUT running the room disclosure - the gate denies.
   const room = await createRoom({
     name: 'Invite Room',
     slug: unique('invite'),
     accessPolicy: { badge: { type: 'invite-code' } },
   });
 
-  // Global (badge-free) sign-in from the header, then create identity.
+  // Global (badge-free) header sign-in, then identity.
   await page.goto('/');
   await page.getByRole('button', { name: /sign in with minister/i }).first().click();
   await consent(page, email);
   await createIdentity(page, ID_PASSWORD);
 
-  // Attempt to join WITHOUT disclosing invite-code: drive Join directly (do not
-  // re-sign-in). The gate denies (policy-denied).
+  // Attempt Join directly with only the badge-free global session token.
   await openRoomUnlocked(page, room.id);
   await page.getByRole('button', { name: /^join$/i }).click();
   await expect(page.getByText(/do not satisfy this room/i)).toBeVisible({ timeout: 30_000 });
-
-  // DB truth: zero leaves and zero ProvenBadge rows for this user.
   await expect.poll(() => db.membershipLeaf.count({ where: { roomId: room.id } })).toBe(0);
-  await expect.poll(() => db.provenBadge.count({ where: { userKey } })).toBe(0);
 });
 
-test('global sign-in discloses nothing (openid profile only)', async ({ page }) => {
+test('global header sign-in discloses nothing (openid profile only)', async ({ page }) => {
   const email = `disc-global-${Date.now()}@example.com`;
 
   await page.goto('/');
   await page.getByRole('button', { name: /sign in with minister/i }).first().click();
   await consent(page, email);
 
-  // The top-level sign-in requests exactly `openid profile`.
+  // The top-level header sign-in (Auth.js `ministerProvider`) requests exactly
+  // `openid profile` - it owns ONLY the badge-free global login.
   expect(await lastAuthorizeScope()).toBe('openid profile');
 });
 
-test('OR room (Phase 2): requests the UNION scope + minister_policy; Minister discloses exactly ONE branch', async ({
+test('OR room: the per-room authorize sends the UNION scope + minister_policy; Minister discloses exactly ONE branch', async ({
   page,
 }) => {
   const db = getPrisma();
   const email = `disc-or-${Date.now()}@example.com`;
-  const sub = subFor(email);
-  const userKey = userKeyForSub(sub);
 
   const room = await createRoom({
     name: 'OR Room',
@@ -293,103 +239,71 @@ test('OR room (Phase 2): requests the UNION scope + minister_policy; Minister di
   });
 
   await createIdentity(page, ID_PASSWORD);
-  await openRoomUnlocked(page, room.id);
-  await page.getByRole('button', { name: /sign in with minister/i }).click();
-  await consent(page, email);
+  await discloseForRoom(page, room.id, email);
 
-  // ASSERT (Phase 2): Discreetly no longer pre-picks a branch. The authorize
-  // request carries the UNION of both candidate types as `scope` AND a
-  // `minister_policy` param (the policy AST) so Minister selects the branch.
-  const badgeScopes = await lastAuthorizeBadgeScopes();
-  expect(badgeScopes).toEqual(['badge:age-over-18', 'badge:residency-country']);
+  // The authorize carried the UNION of both candidate types AND a minister_policy
+  // param so Minister (the mock) selects the branch.
+  expect(await lastAuthorizeBadgeScopes()).toEqual([
+    'badge:age-over-18',
+    'badge:residency-country',
+  ]);
   expect(await lastAuthorizeHasMinisterPolicy()).toBe(true);
 
-  // Join succeeds. The over-disclosure invariant: even though BOTH types were in
-  // scope, Minister disclosed exactly ONE branch (the most-anonymous: age-over-18),
-  // so exactly one ProvenBadge row is written - never the union.
-  await openRoomUnlocked(page, room.id);
+  // Join succeeds inline. The over-disclosure invariant: even though BOTH types
+  // were in scope, the mock issuer disclosed exactly ONE branch (the most-
+  // anonymous: age-over-18). The grant the mock recorded therefore holds only
+  // age-over-18, never the union.
   await page.getByRole('button', { name: /^join$/i }).click();
   await expect.poll(() => db.membershipLeaf.count({ where: { roomId: room.id } })).toBe(1);
-  await expect.poll(() => db.provenBadge.count({ where: { userKey } })).toBe(1);
-  expect(await db.provenBadge.count({ where: { userKey, badgeType: 'age-over-18' } })).toBe(1);
-  expect(
-    await db.provenBadge.count({ where: { userKey, badgeType: 'residency-country' } }),
-  ).toBe(0);
+  expect(await grantedTypesFor(subFor(email))).toEqual(['age-over-18']);
 });
 
-test('OR room (Phase 2): a user override discloses a DIFFERENT single branch', async ({
+test('transparency grant: a repeat authorize for the same client surfaces the already-granted types', async ({
   page,
 }) => {
+  // The grant lives on Minister (the IdP), not the RP - Discreetly keeps NO
+  // durable badge store. We assert the Discreetly-observable consequence: after
+  // disclosing {age-over-18} to this client once, the mock issuer (simulating
+  // Minister's per-(user,client) grant) reports age-over-18 as already granted,
+  // which is what drives the transparency "already proven to this platform"
+  // section at the next authorize. A second room that ALSO needs age-over-18 plus
+  // a new residency-country discloses both on a fresh token and admits inline.
   const db = getPrisma();
-  const email = `disc-or-override-${Date.now()}@example.com`;
+  const email = `disc-grant-${Date.now()}@example.com`;
   const sub = subFor(email);
-  const userKey = userKeyForSub(sub);
 
-  const room = await createRoom({
-    name: 'OR Override Room',
-    slug: unique('or-ovr'),
+  const roomA = await createRoom({
+    name: 'Grant Age Room',
+    slug: unique('grant-age'),
+    accessPolicy: { badge: { type: 'age-over-18' } },
+  });
+  const roomB = await createRoom({
+    name: 'Grant Age+Res Room',
+    slug: unique('grant-age-res'),
     accessPolicy: {
-      anyOf: [{ badge: { type: 'age-over-18' } }, { badge: { type: 'residency-country' } }],
+      allOf: [{ badge: { type: 'age-over-18' } }, { badge: { type: 'residency-country' } }],
     },
   });
 
   await createIdentity(page, ID_PASSWORD);
-  await openRoomUnlocked(page, room.id);
-  // Drive the override: append `minister_policy_select=residency-country` to the
-  // outbound authorize navigation (the mock Minister's override hook), simulating
-  // the user picking the non-default branch at consent.
-  await page.route('**/oidc/authorize*', async (route) => {
-    const u = new URL(route.request().url());
-    u.searchParams.set('minister_policy_select', 'residency-country');
-    await route.continue({ url: u.toString() });
-  });
-  await page.getByRole('button', { name: /sign in with minister/i }).click();
-  await consent(page, email);
-  await page.unroute('**/oidc/authorize*');
 
-  // Same union scope + minister_policy as the default path.
-  const badgeScopes = await lastAuthorizeBadgeScopes();
-  expect(badgeScopes).toEqual(['badge:age-over-18', 'badge:residency-country']);
-
-  // The override disclosed residency-country ONLY (not the default age-over-18).
-  await openRoomUnlocked(page, room.id);
+  // Room A: disclose {age-over-18}. The grant now records age-over-18.
+  await discloseForRoom(page, roomA.id, email);
   await page.getByRole('button', { name: /^join$/i }).click();
-  await expect.poll(() => db.membershipLeaf.count({ where: { roomId: room.id } })).toBe(1);
-  await expect.poll(() => db.provenBadge.count({ where: { userKey } })).toBe(1);
-  expect(
-    await db.provenBadge.count({ where: { userKey, badgeType: 'residency-country' } }),
-  ).toBe(1);
-  expect(await db.provenBadge.count({ where: { userKey, badgeType: 'age-over-18' } })).toBe(0);
-});
+  await expect.poll(() => db.membershipLeaf.count({ where: { roomId: roomA.id } })).toBe(1);
+  expect(await grantedTypesFor(sub)).toEqual(['age-over-18']);
 
-test('OR room (Phase 2): a user who holds NEITHER branch is denied (policy-denied), no leaf', async ({
-  page,
-}) => {
-  const db = getPrisma();
-  const email = `disc-or-none-${Date.now()}@example.com`;
-  const sub = subFor(email);
-  const userKey = userKeyForSub(sub);
-
-  const room = await createRoom({
-    name: 'OR Empty Room',
-    slug: unique('or-none'),
-    accessPolicy: {
-      anyOf: [{ badge: { type: 'age-over-18' } }, { badge: { type: 'residency-country' } }],
-    },
-  });
-
-  // Sign in GLOBALLY (badge-free): the user discloses neither candidate badge.
-  await page.goto('/');
-  await page.getByRole('button', { name: /sign in with minister/i }).first().click();
-  await consent(page, email);
-  await createIdentity(page, ID_PASSWORD);
-
-  // Attempt to join WITHOUT disclosing either branch: the gate denies.
-  await openRoomUnlocked(page, room.id);
+  // Room B: needs {age-over-18, residency-country}. The repeat authorize shows
+  // age-over-18 as already granted (transparency) AND residency-country as new;
+  // the mock issuer discloses BOTH on the fresh token and the gate admits inline.
+  await discloseForRoom(page, roomB.id, email);
+  expect(await lastAuthorizeBadgeScopes()).toEqual([
+    'badge:age-over-18',
+    'badge:residency-country',
+  ]);
   await page.getByRole('button', { name: /^join$/i }).click();
-  await expect(page.getByText(/do not satisfy this room/i)).toBeVisible({ timeout: 30_000 });
+  await expect.poll(() => db.membershipLeaf.count({ where: { roomId: roomB.id } })).toBe(1);
 
-  // DB truth: no leaf, no ProvenBadge for this user.
-  await expect.poll(() => db.membershipLeaf.count({ where: { roomId: room.id } })).toBe(0);
-  await expect.poll(() => db.provenBadge.count({ where: { userKey } })).toBe(0);
+  // The grant is the monotone union of everything proven to this client.
+  expect(await grantedTypesFor(sub)).toEqual(['age-over-18', 'residency-country']);
 });

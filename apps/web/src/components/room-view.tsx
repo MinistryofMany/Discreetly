@@ -51,6 +51,75 @@ export function RoomView({ roomId }: { roomId: string }) {
   // Server message ids already in the feed, so backfill + live never double-render.
   const seenIdsRef = React.useRef<Set<string>>(new Set());
 
+  // The FRESH per-room id_token from the SDK disclosure flow (Phase 3 / Path B).
+  // The callback redirects here with `?roomAuthPickup=<id>`; pick the token up
+  // ONCE (the endpoint deletes the DB row) and hand it to the JoinPanel for the
+  // join. Done at the RoomView level - not inside JoinPanel - because JoinPanel
+  // only mounts once an identity is unlocked, but the redirect lands with the
+  // identity locked (in-memory state was lost across the OIDC round-trip).
+  //
+  // The token is stashed in `sessionStorage` keyed by roomId so it survives the
+  // subsequent identity-unlock navigation (a full reload of /rooms/R that
+  // remounts this component): the DB pickup row is single-use and already
+  // deleted, so in-memory state alone would be lost on that reload. It is the
+  // user's own token in their own browser - same trust boundary as the
+  // in-memory session token - and is cleared once the join succeeds.
+  const tokenKey = `roomToken:${roomId}`;
+  const [roomToken, setRoomToken] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    // Restore a token stashed by a prior pickup on this room (survives the
+    // unlock reload).
+    const stashed = window.sessionStorage.getItem(tokenKey);
+    if (stashed) setRoomToken(stashed);
+
+    const params = new URLSearchParams(window.location.search);
+    const pickup = params.get('roomAuthPickup');
+    const err = params.get('roomAuthError');
+    const stripParam = (name: string) => {
+      const url = new URL(window.location.href);
+      url.searchParams.delete(name);
+      window.history.replaceState(null, '', url.toString());
+    };
+
+    if (err) {
+      toast.error('Disclosure failed. Please try signing in for this room again.');
+      stripParam('roomAuthError');
+      return;
+    }
+    if (!pickup) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/room-auth/token?pickup=${encodeURIComponent(pickup)}`);
+        if (!res.ok) throw new Error(`pickup failed: ${res.status}`);
+        const body = (await res.json()) as { idToken?: string };
+        if (!cancelled && body.idToken) {
+          window.sessionStorage.setItem(tokenKey, body.idToken);
+          setRoomToken(body.idToken);
+          toast.success('Badges disclosed for this room. Unlock your identity to join.');
+        }
+      } catch {
+        if (!cancelled) {
+          toast.error('Could not retrieve this room’s disclosure. Try signing in again.');
+        }
+      } finally {
+        stripParam('roomAuthPickup');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Run once on mount: the pickup token is single-use and read from the URL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Clear the stashed per-room token once the join lands (single-use gate).
+  const clearRoomToken = React.useCallback(() => {
+    window.sessionStorage.removeItem(tokenKey);
+    setRoomToken(null);
+  }, [tokenKey]);
+
   const appendBroadcast = React.useCallback((broadcast: RoomBroadcast) => {
     // A tombstone re-renders an existing row in place (operator moderation); it
     // is never appended as a new feed item. Replace the matching message's
@@ -218,7 +287,9 @@ export function RoomView({ roomId }: { roomId: string }) {
         <div className="mt-3">
           <JoinPanel
             room={room}
+            roomToken={roomToken}
             onJoined={() => {
+              clearRoomToken();
               void leavesQuery.refetch();
             }}
           />

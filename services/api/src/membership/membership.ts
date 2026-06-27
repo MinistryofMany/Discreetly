@@ -10,8 +10,8 @@ export interface JoinArgs {
   identityCommitment: string;
   deviceLabel?: string;
   /**
-   * Run inside this existing interactive transaction (so the caller can also
-   * write ProvenBadge atomically with the join). Omit to open a fresh one.
+   * Run inside this existing interactive transaction so the caller can compose
+   * the join atomically with other writes. Omit to open a fresh one.
    */
   tx?: TxClient;
 }
@@ -62,8 +62,9 @@ export async function joinRoom(args: JoinArgs): Promise<JoinResult> {
     });
     return { ok: true as const, membershipId: membership.id, leafId: leaf.id, rateCommitment };
   };
-  // Reuse the caller's transaction when given (atomic with a ProvenBadge write),
-  // otherwise open a fresh one. The leaf upsert+count must stay transactional.
+  // Reuse the caller's transaction when given (to compose atomically with other
+  // writes), otherwise open a fresh one. The leaf upsert+count must stay
+  // transactional.
   return args.tx ? run(args.tx) : prisma.$transaction(run);
 }
 

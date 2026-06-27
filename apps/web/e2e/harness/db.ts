@@ -65,9 +65,21 @@ export async function resetData(): Promise<void> {
     db.room.deleteMany(),
     db.auditLog.deleteMany(),
     db.adminUser.deleteMany(),
-    // Durable badge-disclosure store: clear so each spec starts with an empty
-    // proven set (otherwise a prior spec's proofs change delta computation).
-    db.provenBadge.deleteMany(),
+    // Per-room SDK disclosure flow rows: clear in-flight/leftover flows so each
+    // spec starts clean. There is NO durable badge store anymore (Path B).
+    db.roomAuthFlow.deleteMany(),
+    // Auth.js database-session rows (Session -> Account -> User, FK order). The
+    // e2e database persists across runs, so a STALE `Account.id_token` from a
+    // prior run would otherwise survive: next-auth v5 beta.31 does NOT
+    // re-`linkAccount` (does not refresh `Account.id_token`) on a second sign-in
+    // for an already-linked account, so a global header sign-in would forward
+    // the prior run's token - signed by a now-dead mock-issuer key - and every
+    // gated/open join would fail signature verification. Clearing these makes
+    // each global sign-in mint and store a FRESH token. (Phase 3 removed the
+    // `captureDisclosure` profile() workaround that used to refresh the token.)
+    db.session.deleteMany(),
+    db.account.deleteMany(),
+    db.user.deleteMany(),
   ]);
 }
 

@@ -2,7 +2,6 @@ import NextAuth from 'next-auth';
 import { PrismaAdapter } from '@auth/prisma-adapter';
 import { prisma } from '@discreetly/db';
 import { ministerProvider } from '@minister/client/auth-js';
-import { captureDisclosure } from '@discreetly/api/disclosure';
 import { decodeMinisterClaims } from '@/lib/minister-claims';
 
 // Auth.js v5 RP for Discreetly. Signs in via Minister using the
@@ -31,63 +30,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   // pre-existing limitation, documented in docs/auth-session-model.md.
   session: { strategy: 'database', maxAge: 30 * 24 * 60 * 60 },
   providers: [
-    {
-      ...ministerProvider({
-        issuer: process.env.MINISTER_ISSUER!,
-        clientId: process.env.MINISTER_CLIENT_ID!,
-        clientSecret: process.env.MINISTER_CLIENT_SECRET,
-        // Per-room minimal disclosure: the PROVIDER default discloses NO badges.
-        // A global/top-level `signIn('minister')` therefore asks Minister only
-        // for `openid profile`. Each room join requests that room's FULL required
-        // badge set (model 2b) via the THIRD `signIn` arg in `join-panel.tsx`
-        // (`{ scope }`), which Auth.js merges last and so overrides this static
-        // default. Do not add badge scopes back here.
-        scopes: ['openid', 'profile'],
-      }),
-      // Disclosure capture (model 2b). `profile(claims, tokens)` fires on EVERY
-      // OAuth callback with the fresh `id_token` (`tokens.id_token`), BEFORE
-      // account-linking. We use it because next-auth v5 beta.31 does NOT
-      // re-`linkAccount` on a second sign-in for an already-linked account, so the
-      // session-borne token (read from `Account.id_token`) would otherwise stay
-      // frozen at the first sign-in and the gate would never see a second room's
-      // freshly-disclosed badges. `captureDisclosure` verifies the fresh token,
-      // records its disclosed badge TYPES into the durable `ProvenBadge` store,
-      // and refreshes the stored `Account.id_token` - all keyed on the verified
-      // `sub` (non-forgeable). It is fail-closed: any error is swallowed so a
-      // capture failure never blocks sign-in (the gate then relies on the live
-      // token alone, which under 2b still carries the room's full set).
-      //
-      // The returned object must match Auth.js's default OIDC profile shape so
-      // `account.providerAccountId` stays the pairwise `sub` and user
-      // creation/linking is unchanged.
-      async profile(claims: Record<string, unknown>, tokens: { id_token?: string }) {
-        const idToken = tokens.id_token;
-        if (idToken) {
-          try {
-            await captureDisclosure(idToken, {
-              issuer: process.env.MINISTER_ISSUER!,
-              audience: process.env.MINISTER_CLIENT_ID!,
-            });
-          } catch (error) {
-            // Fail-closed: never block sign-in on a capture failure. Log ONLY a
-            // safe summary (the error message) for observability - NEVER the
-            // id_token or any badge VC, which may carry token material / PII.
-            // Mirrors the verifier's safe-warn style (services/api/src/minister/
-            // verify.ts).
-            console.warn(
-              'disclosure capture failed; proceeding with sign-in:',
-              error instanceof Error ? error.message : String(error),
-            );
-          }
-        }
-        return {
-          id: (claims.sub as string | undefined) ?? crypto.randomUUID(),
-          name: (claims.name as string | undefined) ?? null,
-          email: (claims.email as string | undefined) ?? null,
-          image: (claims.picture as string | undefined) ?? null,
-        };
-      },
-    },
+    ministerProvider({
+      issuer: process.env.MINISTER_ISSUER!,
+      clientId: process.env.MINISTER_CLIENT_ID!,
+      clientSecret: process.env.MINISTER_CLIENT_SECRET,
+      // F-3 (a): `ministerProvider` owns ONLY the badge-free GLOBAL header login
+      // (`openid profile`). Per-room disclosure no longer rides Auth.js's
+      // third-arg merge - it runs the SDK auth-code+PKCE flow at dedicated RP
+      // routes (`/api/room-auth/start` + `/api/room-auth/callback`), which carry
+      // `minister_policy` and mint a fresh per-room id_token handed straight to
+      // the gate. The global login carries no badges, so its session token is
+      // irrelevant to gating; there is no disclosure capture here anymore.
+      scopes: ['openid', 'profile'],
+    }),
   ],
   callbacks: {
     // Under database strategy the session callback receives the adapter `user`

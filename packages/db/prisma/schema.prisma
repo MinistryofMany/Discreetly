@@ -132,25 +132,37 @@ model AdminUser {
   createdAt   DateTime @default(now())
 }
 
-/// Durable record that the Discreetly user behind <userKey> proved badge
-/// <badgeType> to Discreetly at least once. NOT a credential store: no VC, no
-/// attribute values, no VC `iat`. Source of truth for "already proven", so a
-/// later room requests only genuinely-new badge types. Constrained policy leaves
-/// (where/maxAgeDays) are NOT satisfiable from this store and always re-request
-/// the live badge (fork F-D): the store carries no attributes or issued-at, so
-/// it can only ever satisfy a bare type-only leaf.
-model ProvenBadge {
-  id            String   @id @default(cuid())
-  /// Discreetly-scoped user key: toField(pairwise sub) as a decimal string
-  /// (same reduction as join-nullifier's toField). The raw Minister sub never
-  /// leaves Discreetly; the pairwise sub is already RP-scoped.
-  userKey       String
-  /// Minister badge slug, e.g. "age-over-18". A known type only.
-  badgeType     String
-  firstProvenAt DateTime @default(now())
+/// Per-room SDK disclosure flow state (Phase 3 / Path B). The RP "start join"
+/// route mints PKCE+state+nonce, persists them here keyed by `state`, and
+/// redirects to Minister's authorize endpoint carrying `minister_policy`. The
+/// `redirectUri` callback looks the row up by `state` (delete-on-read of the
+/// pre-exchange secrets), runs `exchangeCode`, and stores the verified, fresh
+/// per-room `idToken` back on the SAME row, then redirects the browser to the
+/// room with the row `id` as an unguessable single-use pickup token. The client
+/// picks the token up once (`/api/room-auth/token`, which deletes the row) and
+/// forwards it to `membership.join`. Rows are short-lived and single-use; expiry
+/// is enforced server-side. Carries no durable badge data - only the live token
+/// for the in-flight join.
+model RoomAuthFlow {
+  /// Unguessable, server-generated. Doubles as the post-callback pickup token.
+  id          String   @id @default(cuid())
+  /// OIDC `state`; the callback's lookup key. Unique so a forged/duplicate
+  /// state can never collide with an in-flight flow.
+  state       String   @unique
+  /// OIDC `nonce` the SDK binds the id_token to; checked at `exchangeCode`.
+  nonce       String
+  /// PKCE S256 verifier; consumed at the token exchange. Nulled after exchange.
+  codeVerifier String?
+  /// The room this disclosure flow is for; the join target after callback.
+  roomId      String
+  /// The verified, fresh per-room id_token, set by the callback after a
+  /// successful `exchangeCode`. Null until the callback completes.
+  idToken     String?  @db.Text
+  createdAt   DateTime @default(now())
+  /// Hard server-side TTL; an expired row is rejected and cleaned up.
+  expiresAt   DateTime
 
-  @@unique([userKey, badgeType])
-  @@index([userKey])
+  @@index([expiresAt])
 }
 
 model AuditLog {

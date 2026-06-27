@@ -10,6 +10,7 @@ overrides:
   ws: ^8.21.0
   postcss: ^8.5.10
   underscore: '>=1.13.8'
+  '@minister/client': file:../minister-client-phase3
 
 importers:
 
@@ -55,8 +56,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared
       '@minister/client':
-        specifier: git+https://github.com/MinistryofMany/minister-client.git#a009051
-        version: https://codeload.github.com/MinistryofMany/minister-client/tar.gz/a009051
+        specifier: file:../../../minister-client-phase3
+        version: file:../minister-client-phase3
       '@prisma/client':
         specifier: ^6.19.3
         version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
@@ -287,8 +288,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared
       '@minister/client':
-        specifier: git+https://github.com/MinistryofMany/minister-client.git#a009051
-        version: https://codeload.github.com/MinistryofMany/minister-client/tar.gz/a009051
+        specifier: file:../../../minister-client-phase3
+        version: file:../minister-client-phase3
       '@trpc/server':
         specifier: ^11.0.0
         version: 11.17.0(typescript@5.9.3)
@@ -812,9 +813,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@minister/client@https://codeload.github.com/MinistryofMany/minister-client/tar.gz/a009051':
-    resolution: {tarball: https://codeload.github.com/MinistryofMany/minister-client/tar.gz/a009051}
-    version: 0.2.0
+  '@minister/client@file:../minister-client-phase3':
+    resolution: {directory: ../minister-client-phase3, type: directory}
     peerDependencies:
       '@auth/core': ^0.37.0
     peerDependenciesMeta:
@@ -4249,7 +4249,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@minister/client@https://codeload.github.com/MinistryofMany/minister-client/tar.gz/a009051':
+  '@minister/client@file:../minister-client-phase3':
     dependencies:
       jose: 5.10.0
       zod: 3.25.76

@@ -4,7 +4,6 @@ import type { PolicyNode } from '@discreetly/policy';
 import { router, publicProcedure } from './trpc.js';
 import { evaluateGate } from '../gate/gate.js';
 import { joinRoom, rotateDevice } from '../membership/membership.js';
-import { loadProvenTypes, recordProvenTypes } from '../membership/proven-badges.js';
 
 export const membershipRouter = router({
   join: publicProcedure
@@ -23,58 +22,30 @@ export const membershipRouter = router({
       // its (~10 min) validity window is replayable - there is no per-request
       // nonce/PoP at this tRPC layer. Anti-replay relies on TLS in transit plus
       // the SHORT token lifetime; the OIDC `nonce` that binds the token to a
-      // browser login is enforced upstream at the Auth.js callback (see
-      // `apps/web/src/auth.ts`), not here. This is the existing model and is
-      // documented in AUDIT.md (M-1).
+      // per-room sign-in is enforced upstream by the SDK-run flow's callback
+      // (`apps/web/src/app/api/room-auth/callback`, via `exchangeCode`), not here.
+      // This is the existing model and is documented in AUDIT.md (M-1).
       const room = await prisma.room.findUnique({ where: { id: input.roomId } });
       if (!room) return { ok: false as const, reason: 'no-room' as const };
-      // The gate evaluates the room policy against (live token badges) UNION the
-      // user's durable proven badge TYPES (F-D: only bare type-only leaves may be
-      // satisfied from the durable store), keyed on the verified `sub`.
+      // The gate evaluates the room policy INLINE against the freshly-presented
+      // token's badges alone (Path B): no durable proven store, no union. The
+      // per-room SDK flow mints a fresh token carrying the room's minimal
+      // satisfying set; the gate sees only that token (keyed on the verified
+      // `sub`). After admission, Semaphore membership carries access.
       const gate = await evaluateGate({
         idToken: input.idToken,
         rlnIdentifier: BigInt(room.rlnIdentifier),
         policy: room.accessPolicy as unknown as PolicyNode,
         verify: ctx.verify,
-        loadProvenTypes,
       });
       if (!gate.allowed) return { ok: false as const, reason: 'policy-denied' as const };
-      // Admit + record the newly-verified disclosed badge TYPES atomically: a
-      // failed join must not leave an orphan ProvenBadge write, and a recorded
-      // proof must always correspond to a real admission. The write is keyed on
-      // the verified `sub` (never client input), so it is non-forgeable.
-      return prisma.$transaction(async (tx) => {
-        const result = await joinRoom({
-          room,
-          joinNullifier: gate.joinNullifier.toString(),
-          identityCommitment: input.identityCommitment,
-          deviceLabel: input.deviceLabel,
-          tx,
-        });
-        if (result.ok && gate.tokenBadgeTypes.length > 0) {
-          await recordProvenTypes(gate.sub, gate.tokenBadgeTypes, tx);
-        }
-        return result;
+      return joinRoom({
+        room,
+        joinNullifier: gate.joinNullifier.toString(),
+        identityCommitment: input.identityCommitment,
+        deviceLabel: input.deviceLabel,
       });
     }),
-  // Authoritative durable proven-badge read, so the client can compute a correct
-  // join "delta" (request only genuinely-new badges). Verifies a fresh id_token
-  // from the Authorization header and keys on the verified `sub`, so it only ever
-  // returns predicates to the `sub` that owns them - returning by any
-  // client-supplied key would be forgeable.
-  provenBadges: publicProcedure.query(async ({ ctx }) => {
-    if (!ctx.adminIdToken) return { badgeTypes: [] as string[] };
-    let sub: string;
-    try {
-      ({ sub } = await ctx.verify(ctx.adminIdToken));
-    } catch {
-      // Invalid/expired token -> disclose nothing (fail closed). The client then
-      // computes the delta as "prove everything the room needs".
-      return { badgeTypes: [] as string[] };
-    }
-    const badgeTypes = await loadProvenTypes(sub);
-    return { badgeTypes };
-  }),
   rotate: publicProcedure
     .input(
       z.object({
@@ -87,15 +58,13 @@ export const membershipRouter = router({
     .mutation(async ({ input, ctx }) => {
       const room = await prisma.room.findUnique({ where: { id: input.roomId } });
       if (!room) return { ok: false as const, reason: 'no-room' as const };
-      // Admission uses the same union-with-durable evaluation as join, so a user
-      // who already proved a room's badges can rotate a device without re-proving.
-      // Rotation is not a new proof event, so it does not write ProvenBadge.
+      // Admission uses the same inline token-only evaluation as join: rotation
+      // re-presents a per-room token whose badges must satisfy the policy.
       const gate = await evaluateGate({
         idToken: input.idToken,
         rlnIdentifier: BigInt(room.rlnIdentifier),
         policy: room.accessPolicy as unknown as PolicyNode,
         verify: ctx.verify,
-        loadProvenTypes,
       });
       if (!gate.allowed) return { ok: false as const, reason: 'policy-denied' as const };
       return rotateDevice({

@@ -2,3 +2,11 @@ packages:
   - 'apps/*'
   - 'services/*'
   - 'packages/*'
+
+# PHASE3: re-pin to the pushed SDK commit at merge.
+# `@minister/client` is overridden to the local build at ../minister-client-phase3
+# (branch feat/sdk-extra-params, which adds `extraParams` to getAuthorizationUrl
+# so the per-room flow can carry `minister_policy`). The override lives in the
+# root package.json `pnpm.overrides` and is consumed by both `services/api` and
+# `apps/web`. At the merge gate, replace the override with a git pin to the
+# pushed SDK commit in BOTH consumers' package.json and drop this override.

@@ -5,8 +5,7 @@
   "type": "module",
   "main": "./src/server.ts",
   "exports": {
-    ".": "./src/server.ts",
-    "./disclosure": "./src/disclosure.ts"
+    ".": "./src/server.ts"
   },
   "scripts": {
     "dev": "tsx watch --tsconfig tsconfig.server.json src/server.ts",

@@ -47,6 +47,18 @@ export async function lastAuthorizeHasMinisterPolicy(): Promise<boolean> {
   return log[log.length - 1]!.ministerPolicy !== null;
 }
 
+/**
+ * The simulated Minister per-(user, client) grant for `sub`: the monotone union
+ * of badge TYPES disclosed to this RP so far, sorted (Path B's IdP-side "already
+ * proven to this platform" record). The RP keeps NO durable badge store, so this
+ * is read from the mock issuer, not the Discreetly database.
+ */
+export async function grantedTypesFor(sub: string): Promise<string[]> {
+  const res = await fetch(`${MOCK_ISSUER}/test/grant?sub=${encodeURIComponent(sub)}`);
+  const body = (await res.json()) as { badgeTypes: string[] };
+  return body.badgeTypes;
+}
+
 let counter = 0;
 export function unique(prefix: string): string {
   counter += 1;

@@ -142,6 +142,23 @@ const pending = new Map<string, PendingAuth>(); // state -> pending auth
 const codes = new Map<string, IssuedCode>(); // code -> grant
 
 /**
+ * Simulated Minister per-(user, client) grant: the monotone union of badge TYPES
+ * a user has ever disclosed to this RP. Phase 3 / Path B: the durable record of
+ * "already proven to this platform" lives on the IdP (this mock), NOT on the RP,
+ * which keeps no durable badge store. It is the source the transparency
+ * "already proven" section would render from. Keyed by `sub` (this mock has a
+ * single client). Exposed read-only at `GET /test/grant?sub=...` for specs.
+ */
+const grants = new Map<string, Set<string>>(); // sub -> granted badge types (union)
+
+/** Record (monotone union) the badge TYPES disclosed to this client for `sub`. */
+function recordGrant(sub: string, disclosedTypes: readonly string[]): void {
+  const existing = grants.get(sub) ?? new Set<string>();
+  for (const t of disclosedTypes) existing.add(t);
+  grants.set(sub, existing);
+}
+
+/**
  * Test-readable log of the `scope` each /oidc/authorize request asked for, keyed
  * by `state`. Exposed at `GET /test/authorize-log` so disclosure specs can assert
  * that a join requested ONLY the room's required badge scopes (per-room minimal
@@ -365,6 +382,16 @@ async function handle(req: IncomingMessage, res: ServerResponse, issuer: string)
   // read this to assert per-room minimal disclosure.
   if (path === '/test/authorize-log') return json(res, { entries: authorizeLog });
 
+  // Test-only: the simulated per-(user, client) grant - the monotone union of
+  // badge types this user has ever disclosed to this RP (Path B's IdP-side
+  // "already proven to this platform" record). Specs assert the transparency
+  // semantics against it. Returns the sorted granted types for `?sub=...`.
+  if (path === '/test/grant') {
+    const sub = url.searchParams.get('sub') ?? '';
+    const types = [...(grants.get(sub) ?? new Set<string>())].sort();
+    return json(res, { sub, badgeTypes: types });
+  }
+
   if (path === '/oidc/userinfo') {
     // Minimal userinfo; the app reads claims from the id_token, not here.
     return json(res, { sub: 'mock' });
@@ -531,6 +558,13 @@ function finishLogin(
 ): void {
   const p = pending.get(state)!;
   pending.delete(state);
+  // Record the per-(user, client) grant: the monotone union of disclosed types.
+  // This is the IdP-side "already proven to this platform" record (Path B); the
+  // RP keeps nothing durable. Drives the transparency section at a repeat authorize.
+  recordGrant(
+    user.sub,
+    user.badges.map((b) => b.type),
+  );
   const code = randomBytes(24).toString('base64url');
   codes.set(code, {
     sub: user.sub,
