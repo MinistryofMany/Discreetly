@@ -151,6 +151,88 @@ test('joining Room(A) requests only A badge scope; a later Room(A AND B) request
   ).toBe(1);
 });
 
+test('F-D: a durable bare-type proof does NOT satisfy a CONSTRAINED leaf - the gate forces a live re-prove', async ({
+  page,
+}) => {
+  // The single most security-critical invariant of the durable store: it carries
+  // only a badge TYPE (no attribute values, no issued-at), so it may satisfy a
+  // BARE type-only leaf but NEVER a constrained (`where`/`maxAgeDays`) one. A
+  // constrained leaf must always re-prove against a live VC. We:
+  //   1. join Room A = bare `age-over-18` (records the durable type),
+  //   2. overwrite the live session token with a BADGE-FREE global sign-in (the
+  //      durable `age-over-18` survives; the live token no longer carries it),
+  //   3. attempt Room B = CONSTRAINED `age-over-18` (`where: { threshold: 18 }`):
+  //      the durable type alone must DENY (no live VC), then
+  //      re-sign-in to disclose the live VC and confirm it JOINS.
+  const db = getPrisma();
+  const email = `disc-fd-${Date.now()}@example.com`;
+  const sub = subFor(email);
+  const userKey = userKeyForSub(sub);
+
+  const roomA = await createRoom({
+    name: 'Bare Age Room',
+    slug: unique('bare-age'),
+    accessPolicy: { badge: { type: 'age-over-18' } },
+  });
+  const roomB = await createRoom({
+    name: 'Constrained Age Room',
+    slug: unique('constrained-age'),
+    // Constrained leaf: predicates on the `threshold` attribute, so it can be
+    // satisfied ONLY by a live VC carrying that attribute - never by the durable
+    // (attribute-less) proven set. The mock `age-over-18` VC carries
+    // `{ threshold: 18 }`, so a live re-prove satisfies it.
+    accessPolicy: { badge: { type: 'age-over-18', where: { threshold: 18 } } },
+  });
+
+  // --- Step 1: join Room A (bare). Records the durable `age-over-18` type. ---
+  await createIdentity(page, ID_PASSWORD);
+  await openRoomUnlocked(page, roomA.id);
+  await page.getByRole('button', { name: /sign in with minister/i }).click();
+  await consent(page, email);
+  await openRoomUnlocked(page, roomA.id);
+  await page.getByRole('button', { name: /^join$/i }).click();
+  await expect.poll(() => db.membershipLeaf.count({ where: { roomId: roomA.id } })).toBe(1);
+  await expect
+    .poll(() => db.provenBadge.count({ where: { userKey, badgeType: 'age-over-18' } }))
+    .toBe(1);
+
+  // --- Step 2: badge-free global sign-in overwrites the live session token. ---
+  // The durable proof persists (record-only, never removed); the live token now
+  // carries NO `age-over-18` VC, so the only possible source for Room B's
+  // constrained leaf would be the (insufficient) durable set. Sign out first (we
+  // are still signed in from the Room A flow), then do the badge-free global
+  // sign-in from the landing CTA. The `profile()` capture refreshes the stored
+  // `Account.id_token` to this badge-free token.
+  await page.goto('/');
+  await page.getByRole('button', { name: /sign out/i }).click();
+  await expect(page.getByRole('button', { name: /sign in with minister/i })).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.getByRole('button', { name: /sign in with minister/i }).first().click();
+  await consent(page, email);
+  expect(await lastAuthorizeScope()).toBe('openid profile');
+  // Durable proof is still present after the badge-free sign-in.
+  expect(await db.provenBadge.count({ where: { userKey, badgeType: 'age-over-18' } })).toBe(1);
+
+  // --- Step 3a: attempt Room B with NO live VC. The durable type must NOT
+  // satisfy the constrained leaf - the server gate denies (F-D). ---
+  await openRoomUnlocked(page, roomB.id);
+  await page.getByRole('button', { name: /^join$/i }).click();
+  await expect(page.getByText(/do not satisfy this room/i)).toBeVisible({ timeout: 30_000 });
+  // Hard DB truth: no leaf was created for Room B by the durable-only attempt.
+  await expect.poll(() => db.membershipLeaf.count({ where: { roomId: roomB.id } })).toBe(0);
+
+  // --- Step 3b: re-sign-in to disclose the LIVE `age-over-18` VC. Now the
+  // constrained leaf is satisfied by the live VC and the join succeeds. ---
+  await openRoomUnlocked(page, roomB.id);
+  await page.getByRole('button', { name: /re-sign in to disclose badges/i }).click();
+  await consent(page, email);
+  expect(await lastAuthorizeBadgeScopes()).toEqual(['badge:age-over-18']);
+  await openRoomUnlocked(page, roomB.id);
+  await page.getByRole('button', { name: /^join$/i }).click();
+  await expect.poll(() => db.membershipLeaf.count({ where: { roomId: roomB.id } })).toBe(1);
+});
+
 test('a missing required badge denies: no leaf, no ProvenBadge', async ({ page }) => {
   const db = getPrisma();
   const email = `disc-deny-${Date.now()}@example.com`;

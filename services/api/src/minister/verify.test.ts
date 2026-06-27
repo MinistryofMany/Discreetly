@@ -38,6 +38,12 @@ describe('verifyMinisterIdToken (mock issuer)', () => {
     await expect(verify(idToken)).rejects.toThrow();
   });
 
+  it('refuses to construct without an audience (fail-closed aud check, M-2)', () => {
+    // The SDK only enforces `aud` when its clientId is truthy; an empty audience
+    // would silently accept a token minted for any RP. makeVerifier must refuse.
+    expect(() => makeVerifier({ issuer: MOCK_ISSUER, audience: '' })).toThrow(/audience/i);
+  });
+
   it('drops a badge whose VC issuer does not match the OIDC issuer host', async () => {
     // The wrapper is valid, but the badge VC is stamped with a different
     // `iss`. The SDK expects did:web:mock.minister (derived from MOCK_ISSUER),

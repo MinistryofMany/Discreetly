@@ -17,6 +17,15 @@ export const membershipRouter = router({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      // SECURITY MODEL (M-1, accepted): `membership.join` trusts a bearer
+      // `idToken` minted by Minister. The gate re-verifies its signature, issuer,
+      // audience, and expiry (`ctx.verify`), but a bearer token presented inside
+      // its (~10 min) validity window is replayable - there is no per-request
+      // nonce/PoP at this tRPC layer. Anti-replay relies on TLS in transit plus
+      // the SHORT token lifetime; the OIDC `nonce` that binds the token to a
+      // browser login is enforced upstream at the Auth.js callback (see
+      // `apps/web/src/auth.ts`), not here. This is the existing model and is
+      // documented in AUDIT.md (M-1).
       const room = await prisma.room.findUnique({ where: { id: input.roomId } });
       if (!room) return { ok: false as const, reason: 'no-room' as const };
       // The gate evaluates the room policy against (live token badges) UNION the

@@ -23,7 +23,7 @@ import { toField } from '../gate/join-nullifier.js';
 type ProvenBadgeClient = {
   provenBadge: {
     findMany: typeof prisma.provenBadge.findMany;
-    upsert: typeof prisma.provenBadge.upsert;
+    createMany: typeof prisma.provenBadge.createMany;
   };
 };
 
@@ -47,10 +47,16 @@ export async function loadProvenTypes(sub: string): Promise<string[]> {
 }
 
 /**
- * Record (idempotent upsert) that this user proved each of `badgeTypes`. Keyed
- * on the verified `sub`; the `@@unique([userKey, badgeType])` constraint makes
- * re-recording a no-op. Pass `client` to enlist in an outer transaction so a
- * failed join leaves no orphan write.
+ * Record (idempotent) that this user proved each of `badgeTypes`. Keyed on the
+ * verified `sub`; the `@@unique([userKey, badgeType])` constraint plus
+ * `skipDuplicates: true` make re-recording an already-proven type a no-op,
+ * leaving its original `firstProvenAt` untouched. Pass `client` to enlist in an
+ * outer transaction so a failed join leaves no orphan write.
+ *
+ * Atomicity (L-1): a SINGLE `createMany` round-trip writes all new rows, so a
+ * partial failure can never leave an inconsistent subset of the disclosed types
+ * recorded. This matters on the `captureDisclosure` path, which records OUTSIDE
+ * any outer transaction; the join path additionally passes `client = tx`.
  */
 export async function recordProvenTypes(
   sub: string,
@@ -58,12 +64,9 @@ export async function recordProvenTypes(
   client: ProvenBadgeClient = prisma,
 ): Promise<void> {
   const userKey = userKeyForSub(sub);
-  for (const badgeType of new Set(badgeTypes)) {
-    await client.provenBadge.upsert({
-      where: { userKey_badgeType: { userKey, badgeType } },
-      create: { userKey, badgeType },
-      // Touch nothing on conflict: `firstProvenAt` must stay the first proof.
-      update: {},
-    });
-  }
+  const data = [...new Set(badgeTypes)].map((badgeType) => ({ userKey, badgeType }));
+  if (data.length === 0) return;
+  // `skipDuplicates` relies on the `@@unique([userKey, badgeType])` index, so an
+  // already-proven type is ignored and its first-proof `firstProvenAt` is kept.
+  await client.provenBadge.createMany({ data, skipDuplicates: true });
 }

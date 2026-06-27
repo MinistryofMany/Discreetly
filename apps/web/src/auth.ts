@@ -68,8 +68,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               issuer: process.env.MINISTER_ISSUER!,
               audience: process.env.MINISTER_CLIENT_ID!,
             });
-          } catch {
-            // Fail-closed: never block sign-in on a capture failure.
+          } catch (error) {
+            // Fail-closed: never block sign-in on a capture failure. Log ONLY a
+            // safe summary (the error message) for observability - NEVER the
+            // id_token or any badge VC, which may carry token material / PII.
+            // Mirrors the verifier's safe-warn style (services/api/src/minister/
+            // verify.ts).
+            console.warn(
+              'disclosure capture failed; proceeding with sign-in:',
+              error instanceof Error ? error.message : String(error),
+            );
           }
         }
         return {
