@@ -21,8 +21,8 @@ const schema = z.object({
   // policy leaf only if its first proof is within this many days; past it, the
   // gate forces a live re-prove. Constrained leaves are unaffected (F-D already
   // re-proves them). `0` (or any value <= 0) disables expiry = proofs are
-  // ever-valid (the `feat/per-room-badge-disclosure` behavior). Default 30.
-  PROVEN_BADGE_TTL_DAYS: z.coerce.number().int().default(30),
+  // ever-valid (the `feat/per-room-badge-disclosure` behavior). Default 180.
+  PROVEN_BADGE_TTL_DAYS: z.coerce.number().int().default(180),
 
   // Transport-layer (per-IP) abuse rate limiting. Disabled in tests/e2e to
   // avoid flakes. Coercion: env vars arrive as strings.
