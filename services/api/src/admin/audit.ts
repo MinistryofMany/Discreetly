@@ -10,7 +10,8 @@ export type AuditAction =
   | 'ADMIN_BAN_NULLIFIER'
   | 'ADMIN_UNBAN'
   | 'RATE_LIMIT_COLLISION'
-  | 'SYSTEM_BROADCAST';
+  | 'SYSTEM_BROADCAST'
+  | 'MESSAGE_DELETE';
 
 export interface AuditEntry {
   actor: string;

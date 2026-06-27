@@ -19,7 +19,14 @@ export type {
   AuditLogRow,
   MessageListItem,
 } from './trpc/outputs.js';
-export type { RoomBroadcast, ChatBroadcast, SystemBroadcast } from './realtime/broadcast.js';
+export type {
+  RoomBroadcast,
+  ChatBroadcast,
+  SystemBroadcast,
+  TombstoneBroadcast,
+} from './realtime/broadcast.js';
+export { TOMBSTONE_MARKER } from './realtime/broadcast.js';
+export { MAX_ROOM_MESSAGES } from './messaging/history.js';
 
 const config = getConfig();
 const { API_PORT, RATE_LIMIT_WINDOW_MS, RATE_LIMIT_MAX, RATE_LIMIT_MUTATION_MAX, TRUST_PROXY } =

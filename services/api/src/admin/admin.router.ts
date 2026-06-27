@@ -3,6 +3,7 @@ import { prisma, Prisma } from '@discreetly/db';
 import { TRPCError } from '@trpc/server';
 import { router, adminProcedure } from '../trpc/trpc.js';
 import { banByIdentityCommitment, banByJoinNullifier, unban } from './ban-admin.js';
+import { deleteMessage } from './delete-message.js';
 import {
   generateRlnIdentifier,
   hashRoomPassword,
@@ -11,7 +12,7 @@ import {
 } from './room-crypto.js';
 import { audit } from './audit.js';
 import { PUBLIC_ROOM_FIELDS } from '../trpc/room-fields.js';
-import { publishSystem } from '../realtime/broadcast.js';
+import { publishSystem, publishTombstone } from '../realtime/broadcast.js';
 
 /** Minimum length for an AES room password, enforced server-side. */
 const AES_MIN_PASSWORD_LENGTH = 12;
@@ -285,6 +286,22 @@ export const adminRouter = router({
     .mutation(async ({ input, ctx }) =>
       unban({ roomId: input.roomId, joinNullifier: input.joinNullifier, actor: ctx.adminSub }),
     ),
+
+  // Operator-only emergency content moderation. Soft-deletes (tombstones) any
+  // message: purges its content in place and renders it as "removed by
+  // operator". The row is retained (thread order + per-room count stay
+  // coherent), and the RLN accounting fields (rlnNullifier/epoch/proof) are
+  // left intact so rate-limit slashing is unaffected. See delete-message.ts.
+  deleteMessage: adminProcedure
+    .input(z.object({ messageId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const outcome = await deleteMessage({ messageId: input.messageId, actor: ctx.adminSub });
+      if (!outcome.ok) throw new TRPCError({ code: 'NOT_FOUND', message: 'message not found' });
+      // Notify open feeds to re-render the row in place. Only on a fresh delete;
+      // a repeat (already-deleted) call need not re-broadcast.
+      if (outcome.deleted) await publishTombstone(outcome.roomId, input.messageId);
+      return { ok: true as const, alreadyDeleted: !outcome.deleted };
+    }),
 
   auditLog: adminProcedure
     .input(

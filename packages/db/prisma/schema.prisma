@@ -110,9 +110,19 @@ model Message {
   proof        Json
   sessionColor String?
   createdAt    DateTime @default(now())
+  // Operator soft-delete (tombstone). When deletedAt is set, the message has
+  // been removed by the platform operator: `content` and `sessionColor` are
+  // purged in place and the row renders as "removed by operator". `rlnNullifier`,
+  // `epoch`, and `proof` are intentionally RETAINED so RLN rate-limit collision
+  // detection (collision.ts) still works for the message's (room, epoch,
+  // nullifier). `deletedBy` is the operator's Minister pairwise sub.
+  deletedAt    DateTime?
+  deletedBy    String?
 
   @@unique([roomId, epoch, rlnNullifier])
   @@index([roomId, epoch])
+  // Ordered prune (newest-1000 ring buffer) and newest-first history reads.
+  @@index([roomId, createdAt])
 }
 
 model AdminUser {

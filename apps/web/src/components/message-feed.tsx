@@ -20,20 +20,25 @@ function formatTime(iso: string): string {
 function ChatRow({
   msg,
   aesKey,
+  onDelete,
 }: {
   msg: ChatBroadcast;
   aesKey: CryptoKey | null;
+  /** Operator-only: tombstone this message. Absent for non-operators. */
+  onDelete?: (id: string) => void;
 }) {
   const color = msg.sessionColor ?? '#64748b';
   const seed = msg.sessionColor ?? msg.id;
+  // A tombstoned row carries the operator marker as its content (not ciphertext);
+  // never run AES decryption on it.
   const [text, setText] = React.useState<string>(() =>
-    aesKey && isEncryptedEnvelope(msg.content) ? '' : msg.content,
+    !msg.deleted && aesKey && isEncryptedEnvelope(msg.content) ? '' : msg.content,
   );
   const [decryptFailed, setDecryptFailed] = React.useState(false);
 
   React.useEffect(() => {
     let cancelled = false;
-    if (aesKey && isEncryptedEnvelope(msg.content)) {
+    if (!msg.deleted && aesKey && isEncryptedEnvelope(msg.content)) {
       decryptContent(aesKey, msg.content)
         .then((plain) => {
           if (!cancelled) {
@@ -51,10 +56,23 @@ function ChatRow({
     return () => {
       cancelled = true;
     };
-  }, [aesKey, msg.content]);
+  }, [aesKey, msg.content, msg.deleted]);
+
+  if (msg.deleted) {
+    return (
+      <div className="flex items-start gap-3 px-1 py-1.5" data-deleted="true">
+        <Avatar className="h-8 w-8 border border-muted">
+          <AvatarFallback className="bg-muted" />
+        </Avatar>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm italic text-muted-foreground">{text}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex items-start gap-3 px-1 py-1.5">
+    <div className="group flex items-start gap-3 px-1 py-1.5">
       <Avatar className="h-8 w-8 border" style={{ borderColor: color }}>
         <AvatarImage src={identiconDataUri(seed, color)} alt="" />
         <AvatarFallback style={{ backgroundColor: color }} />
@@ -67,6 +85,16 @@ function ChatRow({
           <span className="text-[10px] text-muted-foreground">
             {formatTime(msg.createdAt)}
           </span>
+          {onDelete ? (
+            <button
+              type="button"
+              aria-label="Remove message"
+              className="ml-auto text-[10px] text-destructive opacity-0 transition-opacity hover:underline group-hover:opacity-100"
+              onClick={() => onDelete(msg.id)}
+            >
+              remove
+            </button>
+          ) : null}
         </div>
         {decryptFailed ? (
           <p className="text-sm italic text-destructive">
@@ -97,10 +125,13 @@ export function MessageFeed({
   items,
   aesKey,
   loading,
+  onDelete,
 }: {
   items: FeedItem[];
   aesKey: CryptoKey | null;
   loading: boolean;
+  /** Operator-only: tombstone a message by id. Absent for non-operators. */
+  onDelete?: (id: string) => void;
 }) {
   const bottomRef = React.useRef<HTMLDivElement>(null);
 
@@ -116,17 +147,30 @@ export function MessageFeed({
             {loading ? 'Connecting...' : 'No messages yet. Say something.'}
           </p>
         ) : (
-          items.map((item) =>
-            item.broadcast.kind === 'message' ? (
-              <ChatRow key={item.key} msg={item.broadcast} aesKey={aesKey} />
-            ) : (
-              <SystemRow
-                key={item.key}
-                text={item.broadcast.text}
-                createdAt={item.broadcast.createdAt}
-              />
-            ),
-          )
+          items.map((item) => {
+            // A tombstone is applied in place by RoomView (never stored as a
+            // feed item), so items only ever hold 'message' or 'system'.
+            if (item.broadcast.kind === 'message') {
+              return (
+                <ChatRow
+                  key={item.key}
+                  msg={item.broadcast}
+                  aesKey={aesKey}
+                  onDelete={item.broadcast.deleted ? undefined : onDelete}
+                />
+              );
+            }
+            if (item.broadcast.kind === 'system') {
+              return (
+                <SystemRow
+                  key={item.key}
+                  text={item.broadcast.text}
+                  createdAt={item.broadcast.createdAt}
+                />
+              );
+            }
+            return null;
+          })
         )}
         <div ref={bottomRef} />
       </div>

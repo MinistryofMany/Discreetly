@@ -5,6 +5,7 @@ import { verifyMessage } from './verify-message.js';
 import { checkCollision } from './collision.js';
 import { checkEphemeralCollision } from './ephemeral-collision.js';
 import { banOnCollision } from './ban.js';
+import { pruneRoomHistory } from './history.js';
 import { publishMessage, type BroadcastMessage } from '../realtime/broadcast.js';
 
 export interface SendInput {
@@ -128,6 +129,12 @@ export async function sendMessage(input: SendInput): Promise<SendResult> {
     }
     throw e;
   }
+
+  // Ring-buffer prune: keep only this room's newest MAX_ROOM_MESSAGES rows.
+  // Runs after the insert so the just-stored message counts toward the window.
+  // Deletes only the oldest rows (outside the RLN collision window) — see
+  // history.ts for the anonymity argument.
+  await pruneRoomHistory(room.id);
 
   const message: BroadcastMessage = {
     id: stored.id,

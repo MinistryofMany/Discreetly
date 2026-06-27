@@ -5,6 +5,7 @@ import { prisma } from '@discreetly/db';
 import { router, publicProcedure } from './trpc.js';
 import { sendMessage } from '../messaging/pipeline.js';
 import { assertRoomReadable } from '../gate/read-access.js';
+import { TOMBSTONE_MARKER } from '../realtime/broadcast.js';
 
 export const messageRouter = router({
   send: publicProcedure
@@ -77,16 +78,25 @@ export const messageRouter = router({
           content: true,
           sessionColor: true,
           createdAt: true,
+          deletedAt: true,
         },
       });
-      return messages.map((m) => ({
-        kind: 'message' as const,
-        id: m.id,
-        roomId: m.roomId,
-        epoch: m.epoch.toString(),
-        content: m.content,
-        sessionColor: m.sessionColor ?? undefined,
-        createdAt: m.createdAt.toISOString(),
-      }));
+      return messages.map((m) => {
+        // Tombstoned messages render the operator marker in place; their purged
+        // content/sessionColor are never returned. `deleted` lets the client
+        // style the row (and skip AES decryption — content is purged, not
+        // ciphertext).
+        const deleted = m.deletedAt !== null;
+        return {
+          kind: 'message' as const,
+          id: m.id,
+          roomId: m.roomId,
+          epoch: m.epoch.toString(),
+          content: deleted ? TOMBSTONE_MARKER : m.content,
+          sessionColor: deleted ? undefined : (m.sessionColor ?? undefined),
+          createdAt: m.createdAt.toISOString(),
+          deleted,
+        };
+      });
     }),
 });

@@ -1,14 +1,17 @@
 'use client';
 
 import * as React from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
+import { toast } from 'sonner';
 import { useSubscription, type TRPCSubscriptionStatus } from '@trpc/tanstack-react-query';
 import { useTRPC } from '@/lib/trpc';
+import { useIsAdmin } from '@/components/shell/use-is-admin';
 import { useIdentity } from '@/lib/identity-context';
 import { rateCommitmentFor } from '@/lib/rln';
 import type { PublicRoom } from '@/lib/room-types';
 import type { ChatBroadcast, FeedItem, RoomBroadcast } from '@/lib/broadcast-types';
+import { TOMBSTONE_MARKER } from '@/lib/broadcast-types';
 import { MessageFeed } from '@/components/message-feed';
 import { MessageComposer } from '@/components/message-composer';
 import { JoinPanel } from '@/components/join-panel';
@@ -49,6 +52,27 @@ export function RoomView({ roomId }: { roomId: string }) {
   const seenIdsRef = React.useRef<Set<string>>(new Set());
 
   const appendBroadcast = React.useCallback((broadcast: RoomBroadcast) => {
+    // A tombstone re-renders an existing row in place (operator moderation); it
+    // is never appended as a new feed item. Replace the matching message's
+    // content with the marker and flag it deleted.
+    if (broadcast.kind === 'tombstone') {
+      setItems((prev) =>
+        prev.map((it) =>
+          it.broadcast.kind === 'message' && it.broadcast.id === broadcast.id
+            ? {
+                ...it,
+                broadcast: {
+                  ...it.broadcast,
+                  content: TOMBSTONE_MARKER,
+                  sessionColor: undefined,
+                  deleted: true,
+                },
+              }
+            : it,
+        ),
+      );
+      return;
+    }
     if (broadcast.kind === 'message') {
       if (seenIdsRef.current.has(broadcast.id)) return;
       seenIdsRef.current.add(broadcast.id);
@@ -91,6 +115,26 @@ export function RoomView({ roomId }: { roomId: string }) {
         },
       },
     ),
+  );
+
+  // Operator-only moderation: the single platform operator may tombstone any
+  // message. Non-operators never see the control and the API rejects them.
+  const isOperator = useIsAdmin();
+  const deleteMessageMut = useMutation(trpc.admin.deleteMessage.mutationOptions());
+  const handleDeleteMessage = React.useCallback(
+    (id: string) => {
+      deleteMessageMut.mutate(
+        { messageId: id },
+        {
+          // Optimistically tombstone the row in place; the server also publishes
+          // a tombstone broadcast that reconciles other open feeds.
+          onSuccess: () => appendBroadcast({ kind: 'tombstone', id, roomId }),
+          onError: (err) =>
+            toast.error(err instanceof Error ? err.message : 'Failed to remove message'),
+        },
+      );
+    },
+    [deleteMessageMut, appendBroadcast, roomId],
   );
 
   // Membership: the user is joined iff their rateCommitment is in the leaf set.
@@ -159,6 +203,7 @@ export function RoomView({ roomId }: { roomId: string }) {
           items={items}
           aesKey={aesKey}
           loading={sub.status === 'connecting' || sub.status === 'idle'}
+          onDelete={isOperator ? handleDeleteMessage : undefined}
         />
       </div>
 
