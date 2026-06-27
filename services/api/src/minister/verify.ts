@@ -57,6 +57,17 @@ function iatFromRawVc(rawVcJwt: string): number {
  * signature / issuer / audience / expiry.
  */
 export function makeVerifier(deps: VerifierDeps) {
+  // Fail-closed audience (M-2 audit). `@minister/client` only enforces the
+  // id_token `aud` when its `clientId` is truthy - it builds the underlying
+  // `jose` verify options as `...clientId ? { audience: clientId } : {}`, so an
+  // empty/undefined audience would SILENTLY SKIP the `aud` check and accept a
+  // token minted for any other RP. The API config (`MINISTER_CLIENT_ID`,
+  // `z.string().min(1)`) makes this unreachable in production, but guard here so
+  // this reusable factory can never be constructed without an expected audience
+  // regardless of caller.
+  if (!deps.audience) {
+    throw new Error('makeVerifier: a non-empty `audience` (MINISTER_CLIENT_ID) is required');
+  }
   const verifier = createMinisterVerifier({
     issuer: deps.issuer,
     clientId: deps.audience,

@@ -5,7 +5,7 @@ const FIELD = BigInt(
 );
 
 /** Reduce an arbitrary string (e.g. the pairwise sub) to a field element. */
-function toField(s: string): bigint {
+export function toField(s: string): bigint {
   let acc = 0n;
   for (const byte of new TextEncoder().encode(s)) acc = (acc * 256n + BigInt(byte)) % FIELD;
   return acc;

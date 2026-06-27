@@ -5,8 +5,38 @@
 import { expect, type Page } from '@playwright/test';
 import { getPrisma, seedAdmin, resetData } from './db.js';
 import { subFor } from '../mock-oidc/issuer.js';
+import { MOCK_ISSUER } from './env.js';
 
 export { getPrisma, seedAdmin, resetData, subFor };
+
+export interface AuthorizeLogEntry {
+  state: string;
+  scope: string;
+  scopes: string[];
+}
+
+/** All /oidc/authorize requests the mock issuer saw, newest last. */
+export async function getAuthorizeLog(): Promise<AuthorizeLogEntry[]> {
+  const res = await fetch(`${MOCK_ISSUER}/test/authorize-log`);
+  const body = (await res.json()) as { entries: AuthorizeLogEntry[] };
+  return body.entries;
+}
+
+/** The space-delimited scope of the most recent /oidc/authorize request. */
+export async function lastAuthorizeScope(): Promise<string> {
+  const log = await getAuthorizeLog();
+  if (log.length === 0) throw new Error('no authorize requests recorded yet');
+  return log[log.length - 1]!.scope;
+}
+
+/** The badge:* scopes of the most recent authorize, sorted (no openid/profile). */
+export async function lastAuthorizeBadgeScopes(): Promise<string[]> {
+  const scope = await lastAuthorizeScope();
+  return scope
+    .split(/\s+/)
+    .filter((s) => s.startsWith('badge:'))
+    .sort();
+}
 
 let counter = 0;
 export function unique(prefix: string): string {

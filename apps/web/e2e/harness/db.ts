@@ -65,6 +65,9 @@ export async function resetData(): Promise<void> {
     db.room.deleteMany(),
     db.auditLog.deleteMany(),
     db.adminUser.deleteMany(),
+    // Durable badge-disclosure store: clear so each spec starts with an empty
+    // proven set (otherwise a prior spec's proofs change delta computation).
+    db.provenBadge.deleteMany(),
   ]);
 }
 

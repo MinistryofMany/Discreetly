@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { PolicyNode } from '@discreetly/policy';
-import { computeEligibility, decodeBadge, decodeBadges } from './badges';
+import {
+  computeEligibility,
+  decodeBadge,
+  decodeBadges,
+  scopesToRequestForRoom,
+  roomScopeOptions,
+  roomHasBranchChoice,
+  defaultRoomBranch,
+} from './badges';
 
 function b64url(obj: unknown): string {
   const json = JSON.stringify(obj);
@@ -133,5 +141,102 @@ describe('computeEligibility', () => {
     );
     expect(e.requiredScopes).toEqual(['badge:email-domain', 'badge:invite-code']);
     expect(e.satisfied).toBe(true);
+  });
+});
+
+describe('scopesToRequestForRoom (per-room disclosure, model 2b: full required set)', () => {
+  it('requests only the base scopes for an open room', () => {
+    expect(scopesToRequestForRoom({ allOf: [] })).toEqual(['openid', 'profile']);
+  });
+
+  it('requests the badge scope for a single-badge room (nothing proven)', () => {
+    const policy: PolicyNode = { badge: { type: 'age-over-18' } };
+    expect(scopesToRequestForRoom(policy)).toEqual([
+      'openid',
+      'profile',
+      'badge:age-over-18',
+    ]);
+  });
+
+  it('2b: requests the room FULL set, NOT the delta: allOf[A,B] with A proven still requests A AND B', () => {
+    const policy: PolicyNode = {
+      allOf: [{ badge: { type: 'age-over-18' } }, { badge: { type: 'residency-country' } }],
+    };
+    // Under 2b the already-proven A is re-requested so the live token carries the
+    // room's whole set; the delta optimization is intentionally given up.
+    expect(scopesToRequestForRoom(policy, ['age-over-18'])).toEqual([
+      'openid',
+      'profile',
+      'badge:age-over-18',
+      'badge:residency-country',
+    ]);
+  });
+
+  it('2b: re-requests the full set even when every required type is already proven', () => {
+    const policy: PolicyNode = {
+      allOf: [{ badge: { type: 'age-over-18' } }, { badge: { type: 'residency-country' } }],
+    };
+    expect(scopesToRequestForRoom(policy, ['age-over-18', 'residency-country'])).toEqual([
+      'openid',
+      'profile',
+      'badge:age-over-18',
+      'badge:residency-country',
+    ]);
+  });
+
+  it('OR room: requests exactly one branch (the cheapest), not the union', () => {
+    const policy: PolicyNode = {
+      anyOf: [{ badge: { type: 'age-over-18' } }, { badge: { type: 'residency-country' } }],
+    };
+    const scopes = scopesToRequestForRoom(policy);
+    // Exactly one badge scope, not both: the OR-branch selection (over-disclosure
+    // invariant) is unchanged by 2b - 2b only stops subtracting already-proven
+    // types WITHIN the chosen branch.
+    const badgeScopesRequested = scopes.filter((s) => s.startsWith('badge:'));
+    expect(badgeScopesRequested).toHaveLength(1);
+    expect(scopes).toEqual(['openid', 'profile', 'badge:age-over-18']);
+  });
+
+  it('OR room: biases to a branch the user already proved, but still requests that FULL branch (2b)', () => {
+    const policy: PolicyNode = {
+      anyOf: [{ badge: { type: 'age-over-18' } }, { badge: { type: 'residency-country' } }],
+    };
+    // The user already proved residency-country, so that branch is chosen
+    // (least NEW disclosure), and under 2b it is re-requested in full.
+    expect(scopesToRequestForRoom(policy, ['residency-country'])).toEqual([
+      'openid',
+      'profile',
+      'badge:residency-country',
+    ]);
+  });
+
+  it('drops an unknown badge type and fails closed to base scopes when only-unknown', () => {
+    const policy: PolicyNode = { badge: { type: 'totally-unknown' } };
+    // The unknown branch is unrequestable -> no satisfying known option -> base only.
+    expect(scopesToRequestForRoom(policy)).toEqual(['openid', 'profile']);
+  });
+
+  it('fails closed to base scopes on a malformed policy', () => {
+    expect(scopesToRequestForRoom({} as unknown as PolicyNode)).toEqual(['openid', 'profile']);
+  });
+});
+
+describe('OR-branch UI helpers (INTERIM)', () => {
+  const orPolicy: PolicyNode = {
+    anyOf: [{ badge: { type: 'age-over-18' } }, { badge: { type: 'residency-country' } }],
+  };
+
+  it('roomScopeOptions lists each known satisfying branch', () => {
+    expect(roomScopeOptions(orPolicy)).toEqual([['age-over-18'], ['residency-country']]);
+  });
+
+  it('roomHasBranchChoice is true for an OR room, false for a single-badge room', () => {
+    expect(roomHasBranchChoice(orPolicy)).toBe(true);
+    expect(roomHasBranchChoice({ badge: { type: 'age-over-18' } })).toBe(false);
+  });
+
+  it('defaultRoomBranch picks the cheapest-for-this-user branch', () => {
+    expect(defaultRoomBranch(orPolicy)).toEqual(['age-over-18']);
+    expect(defaultRoomBranch(orPolicy, ['residency-country'])).toEqual(['residency-country']);
   });
 });

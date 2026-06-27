@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { evaluate } from './evaluate.js';
+import { evaluate, evaluateWithProven, isConstrainedLeaf } from './evaluate.js';
 import type { PolicyNode, VerifiedBadge } from './types.js';
 
 const NOW = 1_750_000_000; // fixed unix seconds for deterministic expiry tests
@@ -134,5 +134,64 @@ describe('evaluate', () => {
         NOW,
       ),
     ).toBe(false);
+  });
+});
+
+describe('isConstrainedLeaf', () => {
+  it('is false for a bare type-only leaf', () => {
+    expect(isConstrainedLeaf({ badge: { type: 'a' } })).toBe(false);
+  });
+  it('is true when the leaf predicates on attributes (where)', () => {
+    expect(isConstrainedLeaf({ badge: { type: 'a', where: { x: 1 } } })).toBe(true);
+  });
+  it('is true when the leaf predicates on freshness (maxAgeDays)', () => {
+    expect(isConstrainedLeaf({ badge: { type: 'a', maxAgeDays: 30 } })).toBe(true);
+  });
+});
+
+describe('evaluateWithProven (token UNION durable, fork F-D)', () => {
+  const empty = new Set<string>();
+
+  it('satisfies a bare leaf from the durable proven set when the token lacks it', () => {
+    const policy: PolicyNode = { badge: { type: 'age-over-18' } };
+    expect(evaluateWithProven(policy, [], new Set(['age-over-18']), NOW)).toBe(true);
+  });
+
+  it('satisfies a bare leaf from the live token (durable set empty)', () => {
+    const policy: PolicyNode = { badge: { type: 'age-over-18' } };
+    expect(evaluateWithProven(policy, [badge('age-over-18')], empty, NOW)).toBe(true);
+  });
+
+  it('admits allOf[A,B] when A is in the token and B is durably proven', () => {
+    const policy: PolicyNode = {
+      allOf: [{ badge: { type: 'age-over-18' } }, { badge: { type: 'residency-country' } }],
+    };
+    expect(
+      evaluateWithProven(policy, [badge('age-over-18')], new Set(['residency-country']), NOW),
+    ).toBe(true);
+  });
+
+  it('F-D: a `where`-constrained leaf is NOT satisfied from the durable store', () => {
+    const policy: PolicyNode = { badge: { type: 'age-over-18', where: { threshold: 21 } } };
+    // The type is durably proven, but the store has no attributes -> deny.
+    expect(evaluateWithProven(policy, [], new Set(['age-over-18']), NOW)).toBe(false);
+    // A live token badge carrying the attribute DOES satisfy it.
+    expect(
+      evaluateWithProven(policy, [badge('age-over-18', { threshold: 21 })], empty, NOW),
+    ).toBe(true);
+  });
+
+  it('F-D: a `maxAgeDays`-constrained leaf is NOT satisfied from the durable store', () => {
+    const policy: PolicyNode = { badge: { type: 'age-over-18', maxAgeDays: 30 } };
+    expect(evaluateWithProven(policy, [], new Set(['age-over-18']), NOW)).toBe(false);
+    // A fresh live badge satisfies it; the durable store can never.
+    expect(evaluateWithProven(policy, [badge('age-over-18', {}, 10)], empty, NOW)).toBe(true);
+  });
+
+  it('denies when a required type is neither in the token nor durably proven', () => {
+    const policy: PolicyNode = { badge: { type: 'invite-code' } };
+    expect(evaluateWithProven(policy, [badge('age-over-18')], new Set(['age-over-18']), NOW)).toBe(
+      false,
+    );
   });
 });

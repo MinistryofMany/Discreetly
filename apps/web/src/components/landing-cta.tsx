@@ -19,6 +19,8 @@ export function LandingCta() {
           </Link>
         </Button>
       ) : (
+        // Global sign-in: intentionally badge-free (provider default is
+        // `['openid','profile']`). Per-room badge scopes are requested at join.
         <Button
           size="lg"
           className="min-w-[13rem]"

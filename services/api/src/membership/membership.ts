@@ -1,11 +1,19 @@
-import { prisma, MembershipStatus, type Room } from '@discreetly/db';
+import { prisma, MembershipStatus, type Prisma, type Room } from '@discreetly/db';
 import { getRateCommitmentHash } from '@discreetly/crypto';
+
+/** An interactive-transaction client (the `tx` passed to `prisma.$transaction`). */
+export type TxClient = Prisma.TransactionClient;
 
 export interface JoinArgs {
   room: Pick<Room, 'id' | 'rlnIdentifier' | 'userMessageLimit' | 'maxDevices'>;
   joinNullifier: string;
   identityCommitment: string;
   deviceLabel?: string;
+  /**
+   * Run inside this existing interactive transaction (so the caller can also
+   * write ProvenBadge atomically with the join). Omit to open a fresh one.
+   */
+  tx?: TxClient;
 }
 
 export type JoinResult =
@@ -19,7 +27,7 @@ function rateCommitmentFor(ic: string, limit: number): string {
 /** Join (or add a device to) a room membership. */
 export async function joinRoom(args: JoinArgs): Promise<JoinResult> {
   const rateCommitment = rateCommitmentFor(args.identityCommitment, args.room.userMessageLimit);
-  return prisma.$transaction(async (tx) => {
+  const run = async (tx: TxClient): Promise<JoinResult> => {
     const membership = await tx.membership.upsert({
       where: { roomId_joinNullifier: { roomId: args.room.id, joinNullifier: args.joinNullifier } },
       create: { roomId: args.room.id, joinNullifier: args.joinNullifier },
@@ -53,7 +61,10 @@ export async function joinRoom(args: JoinArgs): Promise<JoinResult> {
       },
     });
     return { ok: true as const, membershipId: membership.id, leafId: leaf.id, rateCommitment };
-  });
+  };
+  // Reuse the caller's transaction when given (atomic with a ProvenBadge write),
+  // otherwise open a fresh one. The leaf upsert+count must stay transactional.
+  return args.tx ? run(args.tx) : prisma.$transaction(run);
 }
 
 export interface RotateArgs {
