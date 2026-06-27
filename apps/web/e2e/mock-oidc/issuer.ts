@@ -12,6 +12,13 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
 import { exportJWK, generateKeyPair, SignJWT, type JWK } from 'jose';
+import {
+  type PolicyNode,
+  isBadgeLeaf,
+  isAllOf,
+  isAnyOf,
+  isAtLeast,
+} from '@discreetly/policy';
 
 export const MOCK_CLIENT_ID = 'discreetly_dev';
 
@@ -116,6 +123,10 @@ interface PendingAuth {
   redirectUri: string;
   /** The raw `scope` the RP requested at /oidc/authorize (space-delimited). */
   scope: string;
+  /** The decoded `minister_policy` requirement, if the RP sent one (Phase 2). */
+  ministerPolicy?: PolicyNode | null;
+  /** Test override: force-select these badge types instead of the minimal set. */
+  selectOverride?: string[];
 }
 
 interface IssuedCode {
@@ -136,7 +147,13 @@ const codes = new Map<string, IssuedCode>(); // code -> grant
  * that a join requested ONLY the room's required badge scopes (per-room minimal
  * disclosure). In insertion order; the latest entry is the most recent authorize.
  */
-const authorizeLog: { state: string; scope: string; scopes: string[] }[] = [];
+const authorizeLog: {
+  state: string;
+  scope: string;
+  scopes: string[];
+  /** The raw `minister_policy` param value, or null if the RP sent none (Phase 2). */
+  ministerPolicy: string | null;
+}[] = [];
 
 /** Badge catalog keys implied by a space-delimited `scope` string. */
 function badgeKeysFromScope(scope: string): string[] {
@@ -178,6 +195,109 @@ const BADGE_CATALOG: Record<string, MockBadge> = {
   'residency-country': { type: 'residency-country', attributes: { country: 'US' } },
   'age-over-18': { type: 'age-over-18', attributes: { threshold: 18 } },
 };
+
+// ---- Minister selection simulation (Phase 2) ----------------------------------
+//
+// The real Minister, given the `minister_policy` requirement, picks the minimal
+// satisfying set of badges to disclose - maximizing anonymity (largest holder
+// sets) - and lets the user override at consent. The mock issuer simulates this
+// faithfully enough for the Discreetly e2e: it decodes the policy, computes a
+// single minimal satisfying branch over the badge types the user holds, and mints
+// EXACTLY that branch's badges (never the whole union the `scope` lists). This is
+// what proves the over-disclosure invariant at the Discreetly boundary: a union
+// `scope` does NOT mean a union disclosure.
+//
+// Anonymity ranking is simulated with a fixed per-type holder-count table (larger
+// = more anonymous = preferred). A test may override the selected branch via the
+// `minister_policy_select` query param (a comma-separated list of badge types) to
+// exercise the "user overrides to a different single branch" path.
+
+/** Simulated distinct-holder counts per badge type (larger = more anonymous). */
+const SIMULATED_HOLDER_COUNTS: Record<string, number> = {
+  'age-over-18': 5000,
+  'residency-country': 200,
+  'oauth-account': 3000,
+  'email-domain': 1000,
+  'invite-code': 50,
+};
+
+/** Decode a base64url(JSON) `minister_policy` param into a PolicyNode, or null. */
+function decodeMinisterPolicy(param: string): PolicyNode | null {
+  try {
+    let s = param.replace(/-/g, '+').replace(/_/g, '/');
+    while (s.length % 4 !== 0) s += '=';
+    const json = Buffer.from(s, 'base64').toString('utf8');
+    return JSON.parse(json) as PolicyNode;
+  } catch {
+    return null;
+  }
+}
+
+/** Anonymity of a set of types: rank weakest-link-first (smallest holder count). */
+function anonymityKey(types: readonly string[]): number[] {
+  return types.map((t) => SIMULATED_HOLDER_COUNTS[t] ?? 0).sort((a, b) => a - b);
+}
+
+/** Compare two anonymity keys (ascending-sorted holder counts), larger is better. */
+function compareAnonymity(a: number[], b: number[]): number {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    if (a[i] !== b[i]) return a[i]! - b[i]!; // larger weakest-link wins
+  }
+  return b.length - a.length; // fewer badges (shorter) preferred on a tie
+}
+
+/**
+ * Compute the minimal satisfying type-set for a policy over the user's held
+ * types, maximizing anonymity. Returns null if the user cannot satisfy the
+ * policy. Each returned set is a list of badge types to disclose.
+ */
+function selectMinimalSatisfying(
+  node: PolicyNode,
+  held: ReadonlySet<string>,
+): string[] | null {
+  if (isBadgeLeaf(node)) {
+    return held.has(node.badge.type) ? [node.badge.type] : null;
+  }
+  if (isAllOf(node)) {
+    const parts: string[] = [];
+    for (const child of node.allOf) {
+      const sel = selectMinimalSatisfying(child, held);
+      if (sel === null) return null; // any unsatisfiable child => whole fails
+      parts.push(...sel);
+    }
+    return [...new Set(parts)].sort();
+  }
+  if (isAnyOf(node)) {
+    const candidates = node.anyOf
+      .map((c) => selectMinimalSatisfying(c, held))
+      .filter((s): s is string[] => s !== null);
+    if (candidates.length === 0) return null;
+    return pickMostAnonymous(candidates);
+  }
+  if (isAtLeast(node)) {
+    const { n, of } = node.atLeast;
+    if (n <= 0) return [];
+    const sats = of
+      .map((c) => selectMinimalSatisfying(c, held))
+      .filter((s): s is string[] => s !== null);
+    if (sats.length < n) return null;
+    // Take the n most-anonymous satisfiable children, union their selections.
+    const topN = sats
+      .slice()
+      .sort((a, b) => compareAnonymity(anonymityKey(b), anonymityKey(a)))
+      .slice(0, n);
+    return [...new Set(topN.flat())].sort();
+  }
+  return null;
+}
+
+/** Pick the most-anonymous selection among candidates (weakest-link first). */
+function pickMostAnonymous(candidates: string[][]): string[] {
+  return candidates.reduce((best, cur) =>
+    compareAnonymity(anonymityKey(cur), anonymityKey(best)) > 0 ? cur : best,
+  );
+}
 
 export interface MockIssuerHandle {
   url: string;
@@ -284,9 +404,32 @@ function authorize(req: IncomingMessage, res: ServerResponse, url: URL): void {
   // Record exactly what scope the RP asked for, so specs can assert per-room
   // minimal disclosure (only the room's badges, never the whole wallet).
   const scope = q.get('scope') ?? '';
-  authorizeLog.push({ state, scope, scopes: scope.split(/\s+/).filter(Boolean) });
+  // Phase 2: parse the `minister_policy` requirement (if any) and an optional test
+  // override of which single branch to disclose (`minister_policy_select`, a
+  // comma-separated badge-type list). Both ride the front-channel authorize URL.
+  const ministerPolicyParam = q.get('minister_policy');
+  authorizeLog.push({
+    state,
+    scope,
+    scopes: scope.split(/\s+/).filter(Boolean),
+    ministerPolicy: ministerPolicyParam,
+  });
 
-  pending.set(state, { state, nonce, codeChallenge, redirectUri, scope });
+  const ministerPolicy = ministerPolicyParam ? decodeMinisterPolicy(ministerPolicyParam) : null;
+  const selectOverride = (q.get('minister_policy_select') ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  pending.set(state, {
+    state,
+    nonce,
+    codeChallenge,
+    redirectUri,
+    scope,
+    ministerPolicy,
+    selectOverride: selectOverride.length > 0 ? selectOverride : undefined,
+  });
 
   // Fast-path: tests preselect sub/email + badges and auto-submit.
   const auto = q.get('auto');
@@ -298,9 +441,9 @@ function authorize(req: IncomingMessage, res: ServerResponse, url: URL): void {
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
-    const badges = badgeKeys
-      .map((k) => BADGE_CATALOG[k])
-      .filter((b): b is MockBadge => b !== undefined);
+    // Treat the `badges` query as the held set; Minister selection still applies
+    // when a `minister_policy` was sent (over-disclosure invariant in the fast-path).
+    const badges = resolveDisclosedBadges(pending.get(state), badgeKeys);
     return finishLogin(res, state, { sub, name, badges });
   }
 
@@ -338,18 +481,47 @@ async function approve(req: IncomingMessage, res: ServerResponse): Promise<void>
   const email = form.get('email') ?? 'user@example.com';
   const name = form.get('name') ?? email;
   const sub = subFor(email);
-  // A faithful issuer mints only badges that were requested AND consented. We
-  // treat both the requested `badge:` scopes and any explicitly-checked boxes as
-  // consented, so: (a) the new per-room flow (scope-driven, no boxes) mints
-  // exactly the room's badges, and (b) existing specs that check boxes still work.
   const p = pending.get(state);
+  const badges = resolveDisclosedBadges(p, form.getAll('badge'));
+  finishLogin(res, state, { sub, name, badges });
+}
+
+/**
+ * Resolve the badges the issuer actually mints, simulating Minister's disclosure.
+ *
+ * The "held" types = the union of the requested `badge:` scopes (the menu the RP
+ * listed) and any explicitly-checked consent boxes. Then:
+ *
+ * - With a `minister_policy` (Phase 2): Minister selects ONE minimal satisfying
+ *   set over the held types (anonymity-maximizing) - or honors a test override -
+ *   and mints EXACTLY that set, never the whole union. If the user holds nothing
+ *   satisfying, nothing is minted (the Discreetly gate then denies). This is what
+ *   keeps a union `scope` from becoming a union disclosure.
+ * - Without a `minister_policy`: today's behavior - mint every held badge (each
+ *   requested `badge:` scope is independent).
+ */
+function resolveDisclosedBadges(
+  p: PendingAuth | undefined,
+  checkedKeys: string[],
+): MockBadge[] {
   const scopeKeys = p ? badgeKeysFromScope(p.scope) : [];
-  const checkedKeys = form.getAll('badge');
-  const badgeKeys = [...new Set([...scopeKeys, ...checkedKeys])];
-  const badges = badgeKeys
+  const held = new Set<string>([...scopeKeys, ...checkedKeys]);
+
+  let disclosedTypes: string[];
+  if (p?.ministerPolicy) {
+    if (p.selectOverride && p.selectOverride.length > 0) {
+      // Test override: disclose exactly the named types the user actually holds.
+      disclosedTypes = p.selectOverride.filter((t) => held.has(t));
+    } else {
+      disclosedTypes = selectMinimalSatisfying(p.ministerPolicy, held) ?? [];
+    }
+  } else {
+    disclosedTypes = [...held];
+  }
+
+  return [...new Set(disclosedTypes)]
     .map((k) => BADGE_CATALOG[k])
     .filter((b): b is MockBadge => b !== undefined);
-  finishLogin(res, state, { sub, name, badges });
 }
 
 function finishLogin(

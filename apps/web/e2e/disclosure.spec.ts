@@ -24,6 +24,7 @@ import {
   unique,
   lastAuthorizeBadgeScopes,
   lastAuthorizeScope,
+  lastAuthorizeHasMinisterPolicy,
 } from './harness/helpers.js';
 import { userKeyForSub } from './harness/gate.js';
 
@@ -275,7 +276,7 @@ test('global sign-in discloses nothing (openid profile only)', async ({ page }) 
   expect(await lastAuthorizeScope()).toBe('openid profile');
 });
 
-test('OR room (INTERIM): requests a single branch, joins with one badge, one ProvenBadge row', async ({
+test('OR room (Phase 2): requests the UNION scope + minister_policy; Minister discloses exactly ONE branch', async ({
   page,
 }) => {
   const db = getPrisma();
@@ -296,16 +297,99 @@ test('OR room (INTERIM): requests a single branch, joins with one badge, one Pro
   await page.getByRole('button', { name: /sign in with minister/i }).click();
   await consent(page, email);
 
-  // ASSERT: exactly one branch requested (the cheapest default = age-over-18),
-  // not the union of both branches.
+  // ASSERT (Phase 2): Discreetly no longer pre-picks a branch. The authorize
+  // request carries the UNION of both candidate types as `scope` AND a
+  // `minister_policy` param (the policy AST) so Minister selects the branch.
   const badgeScopes = await lastAuthorizeBadgeScopes();
-  expect(badgeScopes).toHaveLength(1);
-  expect(badgeScopes).toEqual(['badge:age-over-18']);
+  expect(badgeScopes).toEqual(['badge:age-over-18', 'badge:residency-country']);
+  expect(await lastAuthorizeHasMinisterPolicy()).toBe(true);
 
-  // Join succeeds with the single disclosed badge; one ProvenBadge row written.
+  // Join succeeds. The over-disclosure invariant: even though BOTH types were in
+  // scope, Minister disclosed exactly ONE branch (the most-anonymous: age-over-18),
+  // so exactly one ProvenBadge row is written - never the union.
   await openRoomUnlocked(page, room.id);
   await page.getByRole('button', { name: /^join$/i }).click();
   await expect.poll(() => db.membershipLeaf.count({ where: { roomId: room.id } })).toBe(1);
   await expect.poll(() => db.provenBadge.count({ where: { userKey } })).toBe(1);
   expect(await db.provenBadge.count({ where: { userKey, badgeType: 'age-over-18' } })).toBe(1);
+  expect(
+    await db.provenBadge.count({ where: { userKey, badgeType: 'residency-country' } }),
+  ).toBe(0);
+});
+
+test('OR room (Phase 2): a user override discloses a DIFFERENT single branch', async ({
+  page,
+}) => {
+  const db = getPrisma();
+  const email = `disc-or-override-${Date.now()}@example.com`;
+  const sub = subFor(email);
+  const userKey = userKeyForSub(sub);
+
+  const room = await createRoom({
+    name: 'OR Override Room',
+    slug: unique('or-ovr'),
+    accessPolicy: {
+      anyOf: [{ badge: { type: 'age-over-18' } }, { badge: { type: 'residency-country' } }],
+    },
+  });
+
+  await createIdentity(page, ID_PASSWORD);
+  await openRoomUnlocked(page, room.id);
+  // Drive the override: append `minister_policy_select=residency-country` to the
+  // outbound authorize navigation (the mock Minister's override hook), simulating
+  // the user picking the non-default branch at consent.
+  await page.route('**/oidc/authorize*', async (route) => {
+    const u = new URL(route.request().url());
+    u.searchParams.set('minister_policy_select', 'residency-country');
+    await route.continue({ url: u.toString() });
+  });
+  await page.getByRole('button', { name: /sign in with minister/i }).click();
+  await consent(page, email);
+  await page.unroute('**/oidc/authorize*');
+
+  // Same union scope + minister_policy as the default path.
+  const badgeScopes = await lastAuthorizeBadgeScopes();
+  expect(badgeScopes).toEqual(['badge:age-over-18', 'badge:residency-country']);
+
+  // The override disclosed residency-country ONLY (not the default age-over-18).
+  await openRoomUnlocked(page, room.id);
+  await page.getByRole('button', { name: /^join$/i }).click();
+  await expect.poll(() => db.membershipLeaf.count({ where: { roomId: room.id } })).toBe(1);
+  await expect.poll(() => db.provenBadge.count({ where: { userKey } })).toBe(1);
+  expect(
+    await db.provenBadge.count({ where: { userKey, badgeType: 'residency-country' } }),
+  ).toBe(1);
+  expect(await db.provenBadge.count({ where: { userKey, badgeType: 'age-over-18' } })).toBe(0);
+});
+
+test('OR room (Phase 2): a user who holds NEITHER branch is denied (policy-denied), no leaf', async ({
+  page,
+}) => {
+  const db = getPrisma();
+  const email = `disc-or-none-${Date.now()}@example.com`;
+  const sub = subFor(email);
+  const userKey = userKeyForSub(sub);
+
+  const room = await createRoom({
+    name: 'OR Empty Room',
+    slug: unique('or-none'),
+    accessPolicy: {
+      anyOf: [{ badge: { type: 'age-over-18' } }, { badge: { type: 'residency-country' } }],
+    },
+  });
+
+  // Sign in GLOBALLY (badge-free): the user discloses neither candidate badge.
+  await page.goto('/');
+  await page.getByRole('button', { name: /sign in with minister/i }).first().click();
+  await consent(page, email);
+  await createIdentity(page, ID_PASSWORD);
+
+  // Attempt to join WITHOUT disclosing either branch: the gate denies.
+  await openRoomUnlocked(page, room.id);
+  await page.getByRole('button', { name: /^join$/i }).click();
+  await expect(page.getByText(/do not satisfy this room/i)).toBeVisible({ timeout: 30_000 });
+
+  // DB truth: no leaf, no ProvenBadge for this user.
+  await expect.poll(() => db.membershipLeaf.count({ where: { roomId: room.id } })).toBe(0);
+  await expect.poll(() => db.provenBadge.count({ where: { userKey } })).toBe(0);
 });
