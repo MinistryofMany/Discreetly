@@ -11,10 +11,10 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "echo \"(no lint configured)\"",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "zod": "^3.24.1"
+    "@minister/policy": "link:../../../minister-client/packages/policy"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

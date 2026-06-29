@@ -55,8 +55,11 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared
       '@minister/client':
-        specifier: git+https://github.com/MinistryofMany/minister-client.git#65a6a70
-        version: https://codeload.github.com/MinistryofMany/minister-client/tar.gz/65a6a70
+        specifier: link:../../../minister-client
+        version: link:../../../minister-client
+      '@minister/policy':
+        specifier: link:../../../minister-client/packages/policy
+        version: link:../../../minister-client/packages/policy
       '@prisma/client':
         specifier: ^6.19.3
         version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
@@ -255,9 +258,9 @@ importers:
 
   packages/policy:
     dependencies:
-      zod:
-        specifier: ^3.24.1
-        version: 3.25.76
+      '@minister/policy':
+        specifier: link:../../../minister-client/packages/policy
+        version: link:../../../minister-client/packages/policy
     devDependencies:
       typescript:
         specifier: ^5.6.3
@@ -287,8 +290,17 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared
       '@minister/client':
-        specifier: git+https://github.com/MinistryofMany/minister-client.git#65a6a70
-        version: https://codeload.github.com/MinistryofMany/minister-client/tar.gz/65a6a70
+        specifier: link:../../../minister-client
+        version: link:../../../minister-client
+      '@minister/minister-verify':
+        specifier: link:../../../minister-client/packages/minister-verify
+        version: link:../../../minister-client/packages/minister-verify
+      '@minister/nullifier':
+        specifier: link:../../../minister-client/packages/nullifier
+        version: link:../../../minister-client/packages/nullifier
+      '@minister/policy':
+        specifier: link:../../../minister-client/packages/policy
+        version: link:../../../minister-client/packages/policy
       '@trpc/server':
         specifier: ^11.0.0
         version: 11.17.0(typescript@5.9.3)
@@ -811,15 +823,6 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
-
-  '@minister/client@https://codeload.github.com/MinistryofMany/minister-client/tar.gz/65a6a70':
-    resolution: {tarball: https://codeload.github.com/MinistryofMany/minister-client/tar.gz/65a6a70}
-    version: 0.2.0
-    peerDependencies:
-      '@auth/core': ^0.37.0
-    peerDependenciesMeta:
-      '@auth/core':
-        optional: true
 
   '@napi-rs/wasm-runtime@1.1.5':
     resolution: {integrity: sha512-AWPoBRJ9tsnVhor4sjO7rkni+7p+2IAEFj6cx06UgP10jkQHqay/36uRV/bFkgrh18D9vb4cr8Q0Pthskgzy+Q==}
@@ -4248,11 +4251,6 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
-
-  '@minister/client@https://codeload.github.com/MinistryofMany/minister-client/tar.gz/65a6a70':
-    dependencies:
-      jose: 5.10.0
-      zod: 3.25.76
 
   '@napi-rs/wasm-runtime@1.1.5(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)':
     dependencies:
