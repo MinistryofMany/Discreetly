@@ -54,10 +54,10 @@ importers:
       '@discreetly/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@minister/client':
+      '@ministryofmany/client':
         specifier: link:../../../minister-client
         version: link:../../../minister-client
-      '@minister/policy':
+      '@ministryofmany/policy':
         specifier: link:../../../minister-client/packages/policy
         version: link:../../../minister-client/packages/policy
       '@prisma/client':
@@ -258,7 +258,7 @@ importers:
 
   packages/policy:
     dependencies:
-      '@minister/policy':
+      '@ministryofmany/policy':
         specifier: link:../../../minister-client/packages/policy
         version: link:../../../minister-client/packages/policy
     devDependencies:
@@ -289,16 +289,16 @@ importers:
       '@discreetly/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@minister/client':
+      '@ministryofmany/client':
         specifier: link:../../../minister-client
         version: link:../../../minister-client
-      '@minister/minister-verify':
+      '@ministryofmany/minister-verify':
         specifier: link:../../../minister-client/packages/minister-verify
         version: link:../../../minister-client/packages/minister-verify
-      '@minister/nullifier':
+      '@ministryofmany/nullifier':
         specifier: link:../../../minister-client/packages/nullifier
         version: link:../../../minister-client/packages/nullifier
-      '@minister/policy':
+      '@ministryofmany/policy':
         specifier: link:../../../minister-client/packages/policy
         version: link:../../../minister-client/packages/policy
       '@trpc/server':

@@ -69,7 +69,7 @@ that binds an id_token to a specific browser login is enforced upstream at the
 Auth.js callback (PKCE + state + nonce), not at the API. Accepted and documented
 in `services/api/src/disclosure.ts`.
 
-Hardened: `@minister/client` only enforces the id_token `aud` when its `clientId`
+Hardened: `@ministryofmany/client` only enforces the id_token `aud` when its `clientId`
 is truthy (`...clientId ? { audience: clientId } : {}`), so an empty/undefined
 audience would SILENTLY accept a token minted for any other RP. The API config
 (`MINISTER_CLIENT_ID`, `z.string().min(1)`) already makes this unreachable in

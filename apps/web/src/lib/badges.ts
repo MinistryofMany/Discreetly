@@ -10,7 +10,7 @@ import {
   evaluate,
   requiredScopes,
 } from '@discreetly/policy';
-import { badgeTypeOf, badgeScopes, knownBadgeTypes } from '@minister/client/badges';
+import { badgeTypeOf, badgeScopes, knownBadgeTypes } from '@ministryofmany/client/badges';
 
 /**
  * Map a VC `type` array to the Minister badge slug using the SDK's canonical

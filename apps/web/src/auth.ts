@@ -1,11 +1,11 @@
 import NextAuth from 'next-auth';
 import { PrismaAdapter } from '@auth/prisma-adapter';
 import { prisma } from '@discreetly/db';
-import { ministerProvider } from '@minister/client/auth-js';
+import { ministerProvider } from '@ministryofmany/client/auth-js';
 import { decodeMinisterClaims } from '@/lib/minister-claims';
 
 // Auth.js v5 RP for Discreetly. Signs in via Minister using the
-// `@minister/client` provider helper, which returns the same generic OIDC
+// `@ministryofmany/client` provider helper, which returns the same generic OIDC
 // provider config Discreetly hand-rolled before (id 'minister', EdDSA, PKCE +
 // state + nonce). Minister publishes /.well-known/openid-configuration, so
 // Auth.js discovers authorize/token/userinfo/jwks from the issuer URL.

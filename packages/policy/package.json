@@ -14,7 +14,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@minister/policy": "link:../../../minister-client/packages/policy"
+    "@ministryofmany/policy": "link:../../../minister-client/packages/policy"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

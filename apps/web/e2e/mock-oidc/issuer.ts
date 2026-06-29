@@ -24,7 +24,7 @@ export const MOCK_CLIENT_ID = 'discreetly_dev';
 
 /**
  * Derive the badge VC issuer DID from the runtime OIDC issuer port. The SDK
- * verifier (`@minister/client`) expects the badge `iss` to equal
+ * verifier (`@ministryofmany/client`) expects the badge `iss` to equal
  * `didFromIssuer(issuer)` === `did:web:localhost%3A<port>` (the colon in the
  * host:port is percent-encoded per the did:web spec); there is no override.
  * Signing VCs with this DID is what makes badges verify under the SDK.

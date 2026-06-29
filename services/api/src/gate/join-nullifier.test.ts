@@ -8,7 +8,7 @@ const FIELD = BigInt(
 
 /**
  * The OLD local implementation, frozen here verbatim as the migration baseline.
- * `joinNullifier` now delegates to `@minister/nullifier.deriveContextNullifier`,
+ * `joinNullifier` now delegates to `@ministryofmany/nullifier.deriveContextNullifier`,
  * and existing Discreetly membership/ban rows are keyed on this old value, so
  * the new derivation MUST be byte-identical to this for every input or it would
  * silently change the nullifier namespace and orphan those rows.

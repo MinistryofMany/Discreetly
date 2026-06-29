@@ -2,7 +2,7 @@
  * Per-room badge disclosure (Phase 3 / Path B) end-to-end - the INLINE,
  * grant-based, SDK-run model.
  *
- * Each room-join runs the framework-agnostic `@minister/client` auth-code+PKCE
+ * Each room-join runs the framework-agnostic `@ministryofmany/client` auth-code+PKCE
  * flow at dedicated RP routes (`/api/room-auth/start` + `/api/room-auth/callback`),
  * NOT Auth.js's third-`signIn`-arg merge. The start route requests the room's
  * UNION badge scope plus a `minister_policy` AST; the mock issuer (simulating

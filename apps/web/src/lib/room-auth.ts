@@ -2,7 +2,7 @@
  * Per-room disclosure flow (Phase 3 / Path B), server-side.
  *
  * The per-room badge disclosure no longer rides Auth.js's third-`signIn`-arg
- * merge. It runs the framework-agnostic `@minister/client` auth-code+PKCE flow
+ * merge. It runs the framework-agnostic `@ministryofmany/client` auth-code+PKCE flow
  * directly at two dedicated RP routes:
  *
  *   GET /api/room-auth/start?roomId=R    -> mint PKCE+state+nonce, persist the
@@ -22,7 +22,7 @@
  */
 import type { NextRequest } from 'next/server';
 import { prisma } from '@discreetly/db';
-import { createMinisterClient, type MinisterClient } from '@minister/client';
+import { createMinisterClient, type MinisterClient } from '@ministryofmany/client';
 
 /** The fixed redirect URI registered with Minister for the per-room flow. */
 export function roomAuthRedirectUri(): string {
