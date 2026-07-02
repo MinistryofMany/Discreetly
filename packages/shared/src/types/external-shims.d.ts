@@ -1,7 +1,8 @@
 // Ambient module declarations for crypto deps that ship runtime code but no
 // resolvable types under moduleResolution:"Bundler" (their package.json exports
-// maps omit a "types" condition). Consumers of @discreetly/crypto reference this
-// file in their tsconfig "include".
+// maps omit a "types" condition). Referenced from the api/web tsconfig
+// "include"; the RLN math itself now lives in @ministryofmany/rln, which carries
+// its own internal shims.
 declare module 'ffjavascript' {
   export class ZqField {
     constructor(p: bigint);

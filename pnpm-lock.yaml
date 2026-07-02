@@ -42,9 +42,6 @@ importers:
       '@discreetly/circuits':
         specifier: workspace:*
         version: link:../../packages/circuits
-      '@discreetly/crypto':
-        specifier: workspace:*
-        version: link:../../packages/crypto
       '@discreetly/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -60,6 +57,9 @@ importers:
       '@ministryofmany/policy':
         specifier: link:../../../minister-client/packages/policy
         version: link:../../../minister-client/packages/policy
+      '@ministryofmany/rln':
+        specifier: link:../../../minister-client/packages/rln
+        version: link:../../../minister-client/packages/rln
       '@prisma/client':
         specifier: ^6.19.3
         version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
@@ -277,9 +277,9 @@ importers:
 
   services/api:
     dependencies:
-      '@discreetly/crypto':
+      '@discreetly/circuits':
         specifier: workspace:*
-        version: link:../../packages/crypto
+        version: link:../../packages/circuits
       '@discreetly/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -301,6 +301,9 @@ importers:
       '@ministryofmany/policy':
         specifier: link:../../../minister-client/packages/policy
         version: link:../../../minister-client/packages/policy
+      '@ministryofmany/rln':
+        specifier: link:../../../minister-client/packages/rln
+        version: link:../../../minister-client/packages/rln
       '@trpc/server':
         specifier: ^11.0.0
         version: 11.17.0(typescript@5.9.3)
@@ -319,9 +322,6 @@ importers:
       poseidon-lite:
         specifier: 0.2.0
         version: 0.2.0
-      rlnjs:
-        specifier: 3.2.0
-        version: 3.2.0
       ws:
         specifier: ^8.21.0
         version: 8.21.0
