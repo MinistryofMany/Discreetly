@@ -68,7 +68,7 @@ jobs:
 
     steps:
       - name: Checkout Discreetly
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: Discreetly
 
@@ -77,7 +77,7 @@ jobs:
       # `--build-context minister-client=../minister-client`). Check it out next
       # to Discreetly so the relative link: targets resolve.
       - name: Checkout minister-client (linked SDK)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: MinistryofMany/minister-client
           path: minister-client
@@ -199,14 +199,14 @@ jobs:
 
     steps:
       - name: Checkout Discreetly
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: Discreetly
 
       # Sibling SDK checkout so the link:../../../minister-client/... deps
       # resolve (see the ci job for the rationale).
       - name: Checkout minister-client (linked SDK)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: MinistryofMany/minister-client
           path: minister-client
