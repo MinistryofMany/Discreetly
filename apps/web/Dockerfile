@@ -31,12 +31,15 @@ RUN corepack enable
 COPY . .
 
 # The sibling SDK checkout lands at /minister-client, which is exactly where
-# the relative `link:` targets resolve from /app/apps/web (../../../). pnpm
-# does not install a link: target's own dependencies, so give the SDK
-# workspace a production install — webpack resolves the committed dist/'s
-# imports (jose, zod, …) from /minister-client/**/node_modules at build time.
+# the relative `link:` targets resolve from /app/apps/web (../../../). pnpm does
+# not install a link: target's own dependencies, so install the SDK workspace
+# here — webpack needs both its runtime imports (jose, zod, …) and the built
+# dist/ the link: packages' exports point at. That dist/ is gitignored in
+# minister-client (rebuildable output, not committed) with no prepare script, so
+# build the @ministryofmany/* libs explicitly after install.
 COPY --from=minister-client . /minister-client
-RUN cd /minister-client && pnpm install --prod --frozen-lockfile --ignore-scripts
+RUN cd /minister-client && pnpm install --frozen-lockfile \
+  && pnpm --filter "@ministryofmany/*" run build
 
 RUN pnpm install --frozen-lockfile
 

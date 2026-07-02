@@ -32,10 +32,13 @@ COPY . .
 # the relative `link:` targets resolve from /app/services/api (../../../).
 COPY --from=minister-client . /minister-client
 
-# pnpm does not install a `link:` target's own dependencies, so give the SDK
-# workspace a production install of its runtime deps (jose, zod, …) — the
-# committed dist/ resolves them from /minister-client/**/node_modules.
-RUN cd /minister-client && pnpm install --prod --frozen-lockfile --ignore-scripts
+# pnpm does not install a `link:` target's own dependencies, so install the SDK
+# workspace here: the link: packages need both their runtime deps (jose, zod, …)
+# and the built dist/ their exports point at. That dist/ is gitignored in
+# minister-client (rebuildable output, not committed) with no prepare script, so
+# build the @ministryofmany/* libs explicitly after install.
+RUN cd /minister-client && pnpm install --frozen-lockfile \
+  && pnpm --filter "@ministryofmany/*" run build
 
 RUN pnpm install --frozen-lockfile \
   && pnpm --filter @discreetly/db generate
