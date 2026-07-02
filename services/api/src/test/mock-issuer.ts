@@ -35,6 +35,13 @@ function badgeTypeToCredType(type: string): string {
   return `Minister${pascal}Credential`;
 }
 
+// The UTC calendar month ("YYYY-MM") containing `sec` - Minister's bucket
+// function for the coarse `issuanceMonth` disclosure claim. Mirrors
+// minister-client/packages/minister-verify/src/test/mock-issuer.ts.
+export function issuanceMonthOf(sec: number): string {
+  return new Date(sec * 1000).toISOString().slice(0, 7);
+}
+
 async function signVc(sub: string, badge: MockBadge): Promise<string> {
   const nowSec = Math.floor(Date.now() / 1000);
   const iatSec = badge.expired ? nowSec - 120 : nowSec - (badge.ageDays ?? 0) * 86_400;
@@ -50,7 +57,15 @@ async function signVc(sub: string, badge: MockBadge): Promise<string> {
     vc: {
       '@context': ['https://www.w3.org/ns/credentials/v2'],
       type: ['VerifiableCredential', badgeTypeToCredType(badge.type)],
-      credentialSubject: { id: subjectId, ...badge.attributes },
+      // The coarse `issuanceMonth` claim is the only issuance-derived field the
+      // real Minister re-mint emits; the SDK derives a badge's `issuedAt` from
+      // it (month START, UTC), NEVER from the disclosure-time `iat`. Stamp it
+      // from the same backdated `iatSec` so age gates see the coarse bucket.
+      credentialSubject: {
+        id: subjectId,
+        ...badge.attributes,
+        issuanceMonth: issuanceMonthOf(iatSec),
+      },
     },
   })
     .setProtectedHeader({ alg: 'EdDSA', kid: KID, typ: 'vc+jwt' })

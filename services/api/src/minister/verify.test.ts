@@ -23,8 +23,14 @@ describe('verifyMinisterIdToken (mock issuer)', () => {
     expect(result.badges).toEqual([
       expect.objectContaining({ type: 'email-domain', attributes: { domain: 'acme.com' } }),
     ]);
-    // issuedAt is recovered from the verified VC's raw payload `iat`.
+    // issuedAt is the COARSE issuance-month START (UTC), derived from the VC's
+    // `issuanceMonth` claim - never the disclosure-time `iat` (a cross-RP
+    // correlator the SDK deliberately ignores). The mock issues "now", so the
+    // derived issuedAt is the first UTC second of the current month.
+    const now = new Date();
+    const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000;
     expect(typeof result.badges[0]!.issuedAt).toBe('number');
+    expect(result.badges[0]!.issuedAt).toBe(monthStart);
     expect(result.badges[0]!.issuedAt).toBeGreaterThan(0);
   });
 
