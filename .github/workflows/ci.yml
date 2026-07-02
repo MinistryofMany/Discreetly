@@ -266,7 +266,7 @@ jobs:
       # Upload the HTML report on failure so it can be inspected.
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: Discreetly/apps/web/playwright-report/
