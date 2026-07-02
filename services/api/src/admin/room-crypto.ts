@@ -3,7 +3,6 @@ import { TRPCError } from '@trpc/server';
 import { genId, randomBigInt } from '@ministryofmany/rln';
 import type { Prisma } from '@discreetly/db';
 import { policyNodeSchema, type PolicyNode } from '@discreetly/policy';
-import { z } from 'zod';
 
 /** Promisified scrypt with explicit cost options (promisify's typing omits the options overload). */
 function scryptAsync(
@@ -93,14 +92,18 @@ export function policyToJson(p: PolicyNode): Prisma.InputJsonValue {
   return p as unknown as Prisma.InputJsonValue;
 }
 
-/** Validate untrusted accessPolicy input, mapping ZodError to a TRPC BAD_REQUEST. */
+/**
+ * Validate untrusted accessPolicy input, mapping a schema failure to a TRPC
+ * BAD_REQUEST. Uses `safeParse`, NOT `parse` + `instanceof ZodError`:
+ * `policyNodeSchema` comes from the linked `@ministryofmany/policy` package,
+ * which resolves its own `zod` module instance, so a ZodError it throws is a
+ * different class than this package's `z.ZodError` and `instanceof` fails -
+ * the raw ZodError would escape and surface as INTERNAL_SERVER_ERROR.
+ */
 export function validatePolicyInput(input: unknown): PolicyNode {
-  try {
-    return policyNodeSchema.parse(input);
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'invalid accessPolicy' });
-    }
-    throw err;
+  const result = policyNodeSchema.safeParse(input);
+  if (!result.success) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'invalid accessPolicy' });
   }
+  return result.data;
 }

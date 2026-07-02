@@ -12,13 +12,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createHash, randomBytes } from 'node:crypto';
 import { exportJWK, generateKeyPair, SignJWT, type JWK } from 'jose';
-import {
-  type PolicyNode,
-  isBadgeLeaf,
-  isAllOf,
-  isAnyOf,
-  isAtLeast,
-} from '@discreetly/policy';
+import { type PolicyNode, isBadgeLeaf, isAllOf, isAnyOf, isAtLeast } from '@discreetly/policy';
 
 export const MOCK_CLIENT_ID = 'discreetly_dev';
 
@@ -60,20 +54,27 @@ function badgeTypeToCredType(type: string): string {
   return `Minister${pascal}Credential`;
 }
 
-async function signVc(userId: string, badge: MockBadge, port: number): Promise<string> {
+async function signVc(sub: string, badge: MockBadge, port: number): Promise<string> {
   const nowSec = Math.floor(Date.now() / 1000);
   const iatSec = badge.expired ? nowSec - 120 : nowSec - (badge.ageDays ?? 0) * 86_400;
   const vcIssuer = vcIssuerForPort(port);
+  // Minister re-mints every DISCLOSED badge under the holder's per-RP pairwise
+  // pseudonym: subject `did:web:<host>:u:<id_token sub>`. (The stored badge's
+  // stable `:users:<userId>` DID never leaves Minister.) The SDK's holder
+  // binding requires subject === buildPairwiseSubjectDid(issuer, id_token.sub),
+  // so the mock must stamp exactly this shape or every badge lands in
+  // `rejected`.
+  const subjectId = `${vcIssuer}:u:${sub}`;
   return new SignJWT({
     vc: {
       '@context': ['https://www.w3.org/ns/credentials/v2'],
       type: ['VerifiableCredential', badgeTypeToCredType(badge.type)],
-      credentialSubject: { id: `${vcIssuer}:users:${userId}`, ...badge.attributes },
+      credentialSubject: { id: subjectId, ...badge.attributes },
     },
   })
     .setProtectedHeader({ alg: 'EdDSA', kid: kidForPort(port), typ: 'vc+jwt' })
     .setIssuer(vcIssuer)
-    .setSubject(`${vcIssuer}:users:${userId}`)
+    .setSubject(subjectId)
     .setIssuedAt(iatSec)
     .setExpirationTime(badge.expired ? nowSec - 60 : '365d')
     .sign(privateKey);
@@ -90,15 +91,13 @@ export interface MintOpts {
   name?: string;
   badges?: MockBadge[];
   nonce?: string;
-  userId?: string;
 }
 
 /** Mint an id_token directly (for non-browser checks). */
 export async function mintIdToken(opts: MintOpts): Promise<string> {
-  const userId = opts.userId ?? opts.sub.replace(/[^a-zA-Z0-9]/g, '');
   const port = Number(new URL(opts.issuer).port);
   const minister_badges = await Promise.all(
-    (opts.badges ?? []).map((b) => signVc(userId, b, port)),
+    (opts.badges ?? []).map((b) => signVc(opts.sub, b, port)),
   );
   const builder = new SignJWT({
     nonce: opts.nonce,
@@ -269,10 +268,7 @@ function compareAnonymity(a: number[], b: number[]): number {
  * types, maximizing anonymity. Returns null if the user cannot satisfy the
  * policy. Each returned set is a list of badge types to disclose.
  */
-function selectMinimalSatisfying(
-  node: PolicyNode,
-  held: ReadonlySet<string>,
-): string[] | null {
+function selectMinimalSatisfying(node: PolicyNode, held: ReadonlySet<string>): string[] | null {
   if (isBadgeLeaf(node)) {
     return held.has(node.badge.type) ? [node.badge.type] : null;
   }
@@ -527,10 +523,7 @@ async function approve(req: IncomingMessage, res: ServerResponse): Promise<void>
  * - Without a `minister_policy`: today's behavior - mint every held badge (each
  *   requested `badge:` scope is independent).
  */
-function resolveDisclosedBadges(
-  p: PendingAuth | undefined,
-  checkedKeys: string[],
-): MockBadge[] {
+function resolveDisclosedBadges(p: PendingAuth | undefined, checkedKeys: string[]): MockBadge[] {
   const scopeKeys = p ? badgeKeysFromScope(p.scope) : [];
   const held = new Set<string>([...scopeKeys, ...checkedKeys]);
 

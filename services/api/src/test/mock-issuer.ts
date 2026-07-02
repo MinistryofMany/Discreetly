@@ -18,11 +18,11 @@ export interface MockBadge {
   ageDays?: number;
   expired?: boolean;
   /**
-   * Override the VC `iss` (and the matching holder-DID prefix). Still signed
-   * by the mock key, so the signature verifies against the JWKS, but the SDK
-   * derives the expected DID from the OIDC issuer host and rejects any badge
-   * whose `iss` differs - it lands in `rejected`. Defaults to MOCK_VC_ISSUER,
-   * which equals didFromIssuer(MOCK_ISSUER).
+   * Override the VC `iss` (and the matching pairwise-subject prefix). Still
+   * signed by the mock key, so the signature verifies against the JWKS, but
+   * the SDK derives the expected DID from the OIDC issuer host and rejects any
+   * badge whose `iss` differs - it lands in `rejected`. Defaults to
+   * MOCK_VC_ISSUER, which equals didFromIssuer(MOCK_ISSUER).
    */
   vcIssuer?: string;
 }
@@ -35,11 +35,17 @@ function badgeTypeToCredType(type: string): string {
   return `Minister${pascal}Credential`;
 }
 
-async function signVc(userId: string, badge: MockBadge): Promise<string> {
+async function signVc(sub: string, badge: MockBadge): Promise<string> {
   const nowSec = Math.floor(Date.now() / 1000);
   const iatSec = badge.expired ? nowSec - 120 : nowSec - (badge.ageDays ?? 0) * 86_400;
   const vcIssuer = badge.vcIssuer ?? MOCK_VC_ISSUER;
-  const subjectId = `${vcIssuer}:users:${userId}`;
+  // Minister re-mints every DISCLOSED badge under the holder's per-RP pairwise
+  // pseudonym: subject `did:web:<host>:u:<id_token sub>`. (The stored badge's
+  // stable `:users:<userId>` DID never leaves Minister.) The SDK's holder
+  // binding requires subject === buildPairwiseSubjectDid(issuer, id_token.sub),
+  // so the mock must stamp exactly this shape or every badge lands in
+  // `rejected`.
+  const subjectId = `${vcIssuer}:u:${sub}`;
   const builder = new SignJWT({
     vc: {
       '@context': ['https://www.w3.org/ns/credentials/v2'],
@@ -57,14 +63,12 @@ async function signVc(userId: string, badge: MockBadge): Promise<string> {
 
 export async function signIdToken(opts: {
   sub: string;
-  userId?: string;
   badges?: MockBadge[];
   aud?: string;
   issuer?: string;
   nonce?: string;
 }): Promise<string> {
-  const userId = opts.userId ?? 'mockuser';
-  const minister_badges = await Promise.all((opts.badges ?? []).map((b) => signVc(userId, b)));
+  const minister_badges = await Promise.all((opts.badges ?? []).map((b) => signVc(opts.sub, b)));
   return new SignJWT({ nonce: opts.nonce ?? 'n', minister_badges })
     .setProtectedHeader({ alg: 'EdDSA', kid: KID, typ: 'JWT' })
     .setIssuer(opts.issuer ?? MOCK_ISSUER)

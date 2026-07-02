@@ -145,18 +145,23 @@ cp apps/web/.env.example apps/web/.env.local
 DATABASE_URL="postgresql://discreetly:discreetly@localhost:5432/discreetly?schema=public"
 REDIS_URL="redis://localhost:6379"
 MINISTER_ISSUER="http://localhost:3000"
-MINISTER_JWKS_URL="http://localhost:3000/.well-known/jwks.json"
-MINISTER_VC_ISSUER="did:web:minister.local"
 MINISTER_CLIENT_ID="discreetly_dev"
+MINISTER_CLIENT_SECRET="<from Minister dev config>"
 API_PORT="3002"
 ALLOWED_WS_ORIGINS="http://localhost:3000,http://localhost:3001,http://localhost:5173"
 ```
 
-Note: `DATABASE_URL`, `REDIS_URL`, `MINISTER_ISSUER`, `MINISTER_JWKS_URL`,
-`MINISTER_VC_ISSUER`, `MINISTER_CLIENT_ID`, and `API_PORT` are validated by the
-zod schema in `services/api/src/config.ts` (required at startup).
-`ALLOWED_WS_ORIGINS` is read directly from `process.env` in `server.ts` with a
-hardcoded fallback and is not part of the zod schema.
+Note: `DATABASE_URL`, `REDIS_URL`, `MINISTER_ISSUER`, `MINISTER_CLIENT_ID`, and
+`API_PORT` are validated by the zod schema in `services/api/src/config.ts`
+(required at startup). The SDK derives the badge VC issuer DID
+(`did:web:<host>`) from `MINISTER_ISSUER`'s host with no override, so that host
+must equal Minister's `MINISTER_ISSUER_DOMAIN`; `loadConfig` re-runs the
+derivation at boot and fails loud on an unusable issuer. Optionally set
+`MINISTER_VC_ISSUER` to the DID Minister actually stamps and boot also asserts
+the derived DID equals it (catches the host-mismatch foot-gun at startup
+instead of silently rejecting every badge at runtime). `ALLOWED_WS_ORIGINS` is
+read directly from `process.env` in `server.ts` with a hardcoded fallback and
+is not part of the zod schema.
 
 **`apps/web/.env.local`:**
 
