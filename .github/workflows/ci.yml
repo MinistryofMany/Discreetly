@@ -33,6 +33,14 @@ jobs:
     name: CI (typecheck / lint / test / build)
     runs-on: ubuntu-latest
 
+    # Discreetly is checked out into a ./Discreetly subdir (see the two checkout
+    # steps) so the sibling minister-client SDK checkout can sit next to it -
+    # that is where the link:../../../minister-client/... deps resolve from.
+    # All repo commands therefore default to running inside ./Discreetly.
+    defaults:
+      run:
+        working-directory: Discreetly
+
     services:
       postgres:
         image: postgres:16
@@ -59,8 +67,20 @@ jobs:
           --health-retries 10
 
     steps:
-      - name: Checkout
+      - name: Checkout Discreetly
         uses: actions/checkout@v4
+        with:
+          path: Discreetly
+
+      # The @ministryofmany/* SDK deps are `link:../../../minister-client/...`,
+      # a SIBLING checkout outside this repo (mirrors the prod Dockerfiles'
+      # `--build-context minister-client=../minister-client`). Check it out next
+      # to Discreetly so the relative link: targets resolve.
+      - name: Checkout minister-client (linked SDK)
+        uses: actions/checkout@v4
+        with:
+          repository: MinistryofMany/minister-client
+          path: minister-client
 
       # --- pnpm + Node setup ------------------------------------------------
       - name: Setup pnpm
@@ -73,6 +93,22 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
+          cache-dependency-path: |
+            Discreetly/pnpm-lock.yaml
+            minister-client/pnpm-lock.yaml
+
+      # --- Build the linked SDK first ---------------------------------------
+      # minister-client commits only its ROOT dist/; the workspace packages'
+      # dist/ is gitignored (built on demand). Discreetly imports the packages'
+      # types (@ministryofmany/policy, .../rln incl. the ./pure subpath, ...),
+      # so build them before Discreetly install/typecheck or tsc hits TS2307.
+      - name: Install SDK deps
+        working-directory: minister-client
+        run: pnpm install --frozen-lockfile
+
+      - name: Build SDK packages
+        working-directory: minister-client
+        run: pnpm -r --include-workspace-root build
 
       # --- Install dependencies ---------------------------------------------
       - name: Install dependencies
@@ -130,6 +166,12 @@ jobs:
     # Run in parallel with the ci job; does not depend on it passing first.
     # If you want e2e to gate on ci, add `needs: ci` here.
 
+    # Same two-repo layout as the ci job: Discreetly in ./Discreetly, the linked
+    # minister-client SDK checked out as its sibling.
+    defaults:
+      run:
+        working-directory: Discreetly
+
     services:
       postgres:
         image: postgres:16
@@ -156,8 +198,18 @@ jobs:
           --health-retries 10
 
     steps:
-      - name: Checkout
+      - name: Checkout Discreetly
         uses: actions/checkout@v4
+        with:
+          path: Discreetly
+
+      # Sibling SDK checkout so the link:../../../minister-client/... deps
+      # resolve (see the ci job for the rationale).
+      - name: Checkout minister-client (linked SDK)
+        uses: actions/checkout@v4
+        with:
+          repository: MinistryofMany/minister-client
+          path: minister-client
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -169,6 +221,18 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
+          cache-dependency-path: |
+            Discreetly/pnpm-lock.yaml
+            minister-client/pnpm-lock.yaml
+
+      # Build the linked SDK (its packages' dist/ is gitignored) before install.
+      - name: Install SDK deps
+        working-directory: minister-client
+        run: pnpm install --frozen-lockfile
+
+      - name: Build SDK packages
+        working-directory: minister-client
+        run: pnpm -r --include-workspace-root build
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -205,5 +269,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: apps/web/playwright-report/
+          path: Discreetly/apps/web/playwright-report/
           retention-days: 7
