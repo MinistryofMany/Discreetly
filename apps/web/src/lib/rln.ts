@@ -8,19 +8,21 @@
  *   - x = calculateSignalHash(content)
  *   - epoch = floor(Date.now() / rateLimitMs)  (matches pipeline.ts)
  */
-import type { RLNFullProof } from 'rlnjs';
-import { calculateSignalHash, getRateCommitmentHash } from '@discreetly/crypto';
+import type { RlnProof } from '@ministryofmany/rln';
+import { calculateSignalHash, getRateCommitmentHash } from '@ministryofmany/rln/pure';
 import type { AppIdentity } from './identity';
 
-// `@discreetly/crypto/rln` transitively bundles rlnjs, whose CJS output touches
-// `Worker` at module top-level and throws under Node SSR. Import it lazily so
-// merely importing this module (e.g. for the pure helpers below, evaluated when
-// Next renders client components on the server) never pulls rlnjs into the SSR
-// graph. The proving path runs only in the browser.
-type RlnModule = typeof import('@discreetly/crypto/rln');
+// The `@ministryofmany/rln` root barrel re-exports the prover/verifier, which
+// import rlnjs; rlnjs's CJS output touches `Worker` at module top-level and
+// throws under Node SSR. The eager helpers above come from the rlnjs-free
+// `/pure` subpath, so merely importing this module (Next evaluates client
+// components' top-level imports when it renders them on the server) never pulls
+// rlnjs into the SSR graph. The prover is lazy-imported from the barrel and runs
+// only in the browser.
+type RlnModule = typeof import('@ministryofmany/rln');
 let rlnModulePromise: Promise<RlnModule> | null = null;
 function loadRln(): Promise<RlnModule> {
-  rlnModulePromise ??= import('@discreetly/crypto/rln');
+  rlnModulePromise ??= import('@ministryofmany/rln');
   return rlnModulePromise;
 }
 
@@ -137,23 +139,22 @@ export interface ProveMessageInput {
  * (i.e. the identity is a joined member), otherwise the Merkle proof build
  * throws.
  */
-export async function proveMessage(input: ProveMessageInput): Promise<RLNFullProof> {
-  const { merkleProofForLeaf, generateRLNProof } = await loadRln();
+export async function proveMessage(input: ProveMessageInput): Promise<RlnProof> {
+  const { generateRlnProof, staticArtifactSource } = await loadRln();
   const { wasm, zkey } = await getArtifacts();
   const rateCommitment = getRateCommitmentHash(input.identity.commitment, input.userMessageLimit);
-  const merkleProof = merkleProofForLeaf(input.rlnIdentifier, input.leaves, rateCommitment);
-  const x = calculateSignalHash(input.content);
-  return generateRLNProof(
+  return generateRlnProof(
     {
       rlnIdentifier: input.rlnIdentifier,
       identitySecret: input.identity.secret,
       userMessageLimit: input.userMessageLimit,
       messageId: input.messageId,
-      merkleProof,
-      x,
+      leaves: input.leaves,
+      leaf: rateCommitment,
+      x: calculateSignalHash(input.content),
       epoch: input.epoch,
     },
-    { wasm, zkey },
+    staticArtifactSource({ prover: { wasm, zkey } }),
   );
 }
 

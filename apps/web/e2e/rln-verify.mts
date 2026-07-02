@@ -8,8 +8,15 @@
  * root. Prints `VALID` or `INVALID` on stdout.
  */
 import { Identity } from '@semaphore-protocol/identity';
-import { verifyRLNProof, computeRoot } from '@discreetly/crypto/rln';
-import { calculateSignalHash, getRateCommitmentHash } from '@discreetly/crypto';
+import {
+  verifyRlnProof,
+  computeRoot,
+  calculateSignalHash,
+  getRateCommitmentHash,
+  staticArtifactSource,
+} from '@ministryofmany/rln';
+import type { RlnProof, RlnVerificationKey } from '@ministryofmany/rln';
+import { rlnVerificationKey } from '@discreetly/circuits';
 import {
   SPIKE_CONTENT,
   SPIKE_DECOY_LEAVES,
@@ -46,24 +53,27 @@ async function main(): Promise<void> {
   const input = JSON.parse(await readStdin()) as { proof: RawProof };
   const raw = input.proof;
 
-  // Rehydrate bigints the crypto verifier expects.
+  // Rehydrate bigints the RLN verifier expects.
   const proof = {
     snarkProof: raw.snarkProof,
     epoch: BigInt(raw.epoch),
     rlnIdentifier: BigInt(raw.rlnIdentifier),
-  } as unknown as Parameters<typeof verifyRLNProof>[0]['proof'];
+  } as unknown as RlnProof;
 
   const signalHash = calculateSignalHash(SPIKE_CONTENT);
   const expectedRoot = computeRoot(SPIKE_RLN_IDENTIFIER, expectedLeaves());
 
-  const valid = await verifyRLNProof({
-    rlnIdentifier: SPIKE_RLN_IDENTIFIER,
-    proof,
-    signalHash,
-    epoch: SPIKE_EPOCH,
-    currentEpoch: SPIKE_EPOCH,
-    expectedRoot,
-  });
+  const valid = await verifyRlnProof(
+    {
+      rlnIdentifier: SPIKE_RLN_IDENTIFIER,
+      proof,
+      signalHash,
+      epoch: SPIKE_EPOCH,
+      currentEpoch: SPIKE_EPOCH,
+      expectedRoot,
+    },
+    staticArtifactSource({ verificationKey: rlnVerificationKey as RlnVerificationKey }),
+  );
 
   process.stdout.write(valid ? 'VALID\n' : 'INVALID\n');
   process.exit(valid ? 0 : 1);

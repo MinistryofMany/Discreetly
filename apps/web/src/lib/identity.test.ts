@@ -1,17 +1,22 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+// v3 Identity is kept ONLY as a test oracle (devDependency): it is the
+// belt-and-suspenders that proves the shed v3 wrapper stayed byte-compatible.
 import { Identity } from '@semaphore-protocol/identity';
-import { getIdentityCommitmentFromSecret } from '@discreetly/crypto';
+import { getIdentityCommitmentFromSecret } from '@ministryofmany/rln/pure';
 import {
   STORAGE_KEY,
   WrongPasswordError,
   backupToBlob,
   clear,
   createIdentity,
+  decryptIdentity,
+  encryptIdentity,
   exportBackup,
   hasStoredIdentity,
   importBackup,
   saveEncrypted,
   unlock,
+  type AppIdentity,
 } from './identity';
 
 const PW = 'correct horse battery staple';
@@ -35,6 +40,27 @@ describe('createIdentity', () => {
 
   it('generates distinct identities', () => {
     expect(createIdentity().commitment).not.toBe(createIdentity().commitment);
+  });
+});
+
+describe('v3 migration: existing localStorage envelope keeps its commitment', () => {
+  it('a pre-migration [trapdoor, nullifier] envelope restores to the v3 commitment', async () => {
+    // The exact bytes an old client stored: Semaphore v3 `Identity.toString()`.
+    const KNOWN_BLOB = JSON.stringify(['0x123456789abcdef', '0xfedcba987654321']);
+    // Oracle: what v3 itself derives for this blob (the "no member falls out of
+    // the room's leaf set" guarantee - the commitment must be byte-identical).
+    const v3 = new Identity(KNOWN_BLOB);
+
+    // The encrypted store only ever held the serialized bytes; simulate that
+    // pre-migration envelope, then decrypt through the NEW deserializer path.
+    const preMigration = { serialized: KNOWN_BLOB, secret: 0n, commitment: 0n } as AppIdentity;
+    const env = await encryptIdentity(preMigration, PW);
+    const restored = await decryptIdentity(env, PW);
+
+    expect(restored.secret).toBe(v3.secret);
+    expect(restored.commitment).toBe(v3.commitment);
+    expect(getIdentityCommitmentFromSecret(restored.secret)).toBe(restored.commitment);
+    expect(restored.serialized).toBe(KNOWN_BLOB);
   });
 });
 

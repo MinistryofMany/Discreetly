@@ -6,16 +6,23 @@
  * WebCrypto) and persisted to localStorage. The derived key and the plaintext
  * secret are NEVER persisted and NEVER sent over the network.
  *
- * Derivation mirrors `packages/crypto/src/rln/rln.roundtrip.test.ts`:
- *   - `identity.secret` is the RLN `identitySecret` input.
- *   - `identity.commitment === getIdentityCommitmentFromSecret(identity.secret)`
- *     (poseidon1 of the secret), so collision-ban recovery maps back correctly.
+ * Derivation goes through `@ministryofmany/rln`'s bigint identity layer (the
+ * lifted Semaphore v3 math), so no v3 `Identity` object is held:
+ *   - `secret = poseidon2([nullifier, trapdoor])` is the RLN `identitySecret`.
+ *   - `commitment === getIdentityCommitmentFromSecret(secret)` (poseidon1 of the
+ *     secret), so collision-ban recovery maps back correctly.
  *
- * Serialization uses Semaphore v3's canonical `Identity.toString()`
- * (`[trapdoor, nullifier]`), which fully restores `secret` and `commitment`.
+ * Serialization is the canonical Semaphore v3 form (`[trapdoor, nullifier]` hex),
+ * reproduced byte-for-byte by `serializeV3Identity` / parsed by
+ * `deserializeV3Identity`, so existing localStorage/backup blobs round-trip to
+ * the SAME commitment with no re-enrollment.
  */
-import { Identity } from '@semaphore-protocol/identity';
-import { getIdentityCommitmentFromSecret } from '@discreetly/crypto';
+import {
+  deserializeV3Identity,
+  serializeV3Identity,
+  randomBigInt,
+  getIdentityCommitmentFromSecret,
+} from '@ministryofmany/rln/pure';
 
 export const STORAGE_KEY = 'discreetly.identity.v1';
 
@@ -28,7 +35,7 @@ const AES_KEY_BITS = 256;
 
 /** A loaded identity. `secret` is the RLN identitySecret; `commitment` is the IC. */
 export interface AppIdentity {
-  /** Canonical Semaphore serialization (`Identity.toString()`). */
+  /** Canonical Semaphore v3 serialization (`[trapdoor, nullifier]` hex). */
   readonly serialized: string;
   readonly secret: bigint;
   readonly commitment: bigint;
@@ -87,11 +94,11 @@ function fromBase64(b64: string): Uint8Array {
 }
 
 function fromSerialized(serialized: string): AppIdentity {
-  const identity = new Identity(serialized);
-  const secret = identity.secret;
-  const commitment = identity.commitment;
-  // Invariant: the IC the server stores must equal poseidon1(secret) so
-  // shamir collision recovery (getIdentityCommitmentFromSecret) maps back.
+  const { secret, commitment } = deserializeV3Identity(serialized);
+  // Invariant: the IC the server stores must equal poseidon1(secret) so shamir
+  // collision recovery (getIdentityCommitmentFromSecret) maps back. The
+  // deserializer sets commitment = poseidon1(secret), so this is a structural
+  // guarantee - kept as a cheap tripwire.
   if (getIdentityCommitmentFromSecret(secret) !== commitment) {
     throw new IdentityError('Identity invariant violated: commitment != poseidon1(secret).');
   }
@@ -100,9 +107,15 @@ function fromSerialized(serialized: string): AppIdentity {
 
 // --- public API ---
 
-/** Generate a brand-new Semaphore identity (client-side, never persisted plaintext). */
+/** Generate a brand-new Semaphore v3 identity (client-side, never persisted plaintext). */
 export function createIdentity(): AppIdentity {
-  return fromSerialized(new Identity().toString());
+  // Draw two field elements (trapdoor, nullifier) and serialize them in the
+  // canonical v3 form; `fromSerialized` derives secret = poseidon2([nullifier,
+  // trapdoor]) and commitment = poseidon1(secret). Byte-compatible with any
+  // identity a prior v3 `new Identity()` would have produced for the same pair.
+  const trapdoor = randomBigInt();
+  const nullifier = randomBigInt();
+  return fromSerialized(serializeV3Identity(trapdoor, nullifier));
 }
 
 async function deriveKey(

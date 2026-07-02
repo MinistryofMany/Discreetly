@@ -100,7 +100,7 @@ test('admin: ban by IC, ban by join-nullifier, unban, inspect members', async ({
   });
   const ic = '111222333444';
   const jn = '999888777666';
-  const { getRateCommitmentHash } = await import('@discreetly/crypto');
+  const { getRateCommitmentHash } = await import('@ministryofmany/rln');
   const rateCommitment = getRateCommitmentHash(BigInt(ic), 5).toString();
   await db.membership.create({
     data: {
