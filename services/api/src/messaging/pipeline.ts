@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { prisma } from '@discreetly/db';
-import type { RLNFullProof } from 'rlnjs';
+import type { RlnProof } from '@ministryofmany/rln';
 import { verifyMessage } from './verify-message.js';
 import { checkCollision } from './collision.js';
 import { checkEphemeralCollision } from './ephemeral-collision.js';
@@ -11,7 +11,7 @@ import { publishMessage, type BroadcastMessage } from '../realtime/broadcast.js'
 export interface SendInput {
   roomId: string;
   content: string;
-  proof: RLNFullProof;
+  proof: RlnProof;
   sessionColor?: string;
 }
 

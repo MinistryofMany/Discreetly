@@ -1,10 +1,24 @@
-import type { RLNFullProof } from 'rlnjs';
-import { calculateSignalHash } from '@discreetly/crypto';
-import { verifyRLNProof, computeRoot } from '@discreetly/crypto/rln';
+import {
+  verifyRlnProof,
+  computeRoot,
+  calculateSignalHash,
+  staticArtifactSource,
+} from '@ministryofmany/rln';
+import type { RlnProof, RlnVerificationKey } from '@ministryofmany/rln';
+import { rlnVerificationKey } from '@discreetly/circuits';
+
+// Inject the depth-20 Groth16 verification key once at module scope. The
+// artifacts are NOT bundled by @ministryofmany/rln (it is circuit-agnostic);
+// the app supplies them from @discreetly/circuits, which stays local. Building
+// this once (not per call) keeps the verify path allocation-free and makes a
+// missing key fail loudly at startup rather than silently per message.
+const RLN_ARTIFACTS = staticArtifactSource({
+  verificationKey: rlnVerificationKey as RlnVerificationKey,
+});
 
 export interface VerifyMessageInput {
   rlnIdentifier: bigint;
-  proof: RLNFullProof;
+  proof: RlnProof;
   content: string;
   leaves: readonly (string | bigint)[];
   currentEpoch: bigint;
@@ -31,7 +45,7 @@ interface PreSnarkFields {
  * missing/uncoercible field so the caller can map it to a typed `bad-proof`
  * rejection instead of a 500.
  */
-function extractPreSnarkFields(proof: RLNFullProof): PreSnarkFields | null {
+function extractPreSnarkFields(proof: RlnProof): PreSnarkFields | null {
   try {
     const ps = proof.snarkProof?.publicSignals;
     if (
@@ -77,15 +91,18 @@ export async function verifyMessage(input: VerifyMessageInput): Promise<VerifyMe
   const expectedRoot = computeRoot(input.rlnIdentifier, input.leaves);
   let valid = false;
   try {
-    valid = await verifyRLNProof({
-      rlnIdentifier: input.rlnIdentifier,
-      proof: input.proof,
-      signalHash,
-      epoch,
-      currentEpoch: input.currentEpoch,
-      epochErrorRange: range,
-      expectedRoot,
-    });
+    valid = await verifyRlnProof(
+      {
+        rlnIdentifier: input.rlnIdentifier,
+        proof: input.proof,
+        signalHash,
+        epoch,
+        currentEpoch: input.currentEpoch,
+        epochErrorRange: range,
+        expectedRoot,
+      },
+      RLN_ARTIFACTS,
+    );
   } catch {
     return { ok: false, reason: 'bad-proof' };
   }

@@ -1,8 +1,8 @@
 import { Identity } from '@semaphore-protocol/identity';
 import { poseidon2 } from 'poseidon-lite';
-import { calculateSignalHash } from '@discreetly/crypto';
-import { generateRLNProof, merkleProofForLeaf } from '@discreetly/crypto/rln';
-import type { RLNFullProof } from 'rlnjs';
+import { calculateSignalHash, generateRlnProof, staticArtifactSource } from '@ministryofmany/rln';
+import type { RlnProof } from '@ministryofmany/rln';
+import { rlnWasmPath, rlnZkeyPath } from '@discreetly/circuits';
 
 export interface ProofCtx {
   identity: Identity;
@@ -24,15 +24,18 @@ export async function proofFor(
   message: string,
   epoch: bigint,
   messageId = 0n,
-): Promise<RLNFullProof> {
-  const merkleProof = merkleProofForLeaf(ctx.rlnIdentifier, ctx.leaves, ctx.rateCommitment);
-  return generateRLNProof({
-    rlnIdentifier: ctx.rlnIdentifier,
-    identitySecret: ctx.identity.secret,
-    userMessageLimit: ctx.userMessageLimit,
-    messageId,
-    merkleProof,
-    x: calculateSignalHash(message),
-    epoch,
-  });
+): Promise<RlnProof> {
+  return generateRlnProof(
+    {
+      rlnIdentifier: ctx.rlnIdentifier,
+      identitySecret: ctx.identity.secret,
+      userMessageLimit: ctx.userMessageLimit,
+      messageId,
+      leaves: ctx.leaves,
+      leaf: ctx.rateCommitment,
+      x: calculateSignalHash(message),
+      epoch,
+    },
+    staticArtifactSource({ prover: { wasm: rlnWasmPath, zkey: rlnZkeyPath } }),
+  );
 }

@@ -3,7 +3,7 @@ import {
   shamirRecovery,
   getIdentityCommitmentFromSecret,
   getRateCommitmentHash,
-} from '@discreetly/crypto';
+} from '@ministryofmany/rln';
 import { banMembershipByLeaf, type BanByLeafOutcome } from '../admin/ban-admin.js';
 import { audit } from '../admin/audit.js';
 

@@ -3,7 +3,7 @@
 //   - invite-holders: gated on a Minister `invite-code` badge
 // Run: DATABASE_URL=... pnpm --filter @discreetly/api exec tsx scripts/seed-rooms.ts
 import { prisma } from "@discreetly/db";
-import { genId, randomBigInt } from "@discreetly/crypto";
+import { genId, randomBigInt } from "@ministryofmany/rln";
 
 const rooms = [
   {

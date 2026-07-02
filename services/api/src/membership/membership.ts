@@ -1,5 +1,5 @@
 import { prisma, MembershipStatus, type Prisma, type Room } from '@discreetly/db';
-import { getRateCommitmentHash } from '@discreetly/crypto';
+import { getRateCommitmentHash } from '@ministryofmany/rln';
 
 /** An interactive-transaction client (the `tx` passed to `prisma.$transaction`). */
 export type TxClient = Prisma.TransactionClient;

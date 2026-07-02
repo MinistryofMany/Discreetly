@@ -1,6 +1,6 @@
 import { randomBytes, scrypt, timingSafeEqual, type ScryptOptions } from 'node:crypto';
 import { TRPCError } from '@trpc/server';
-import { genId, randomBigInt } from '@discreetly/crypto';
+import { genId, randomBigInt } from '@ministryofmany/rln';
 import type { Prisma } from '@discreetly/db';
 import { policyNodeSchema, type PolicyNode } from '@discreetly/policy';
 import { z } from 'zod';

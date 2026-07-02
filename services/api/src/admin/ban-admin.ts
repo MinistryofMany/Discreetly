@@ -1,5 +1,5 @@
 import { prisma, BanReason, MembershipStatus, type Prisma } from '@discreetly/db';
-import { getRateCommitmentHash } from '@discreetly/crypto';
+import { getRateCommitmentHash } from '@ministryofmany/rln';
 import { audit } from './audit.js';
 
 export type BanByLeafOutcome =

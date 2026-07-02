@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import type { RLNFullProof } from 'rlnjs';
+import type { RlnProof } from '@ministryofmany/rln';
 import { prisma } from '@discreetly/db';
 import { router, publicProcedure } from './trpc.js';
 import { sendMessage } from '../messaging/pipeline.js';
@@ -23,7 +23,7 @@ export const messageRouter = router({
       sendMessage({
         roomId: input.roomId,
         content: input.content,
-        proof: input.proof as RLNFullProof,
+        proof: input.proof as RlnProof,
         sessionColor: input.sessionColor,
       }),
     ),
