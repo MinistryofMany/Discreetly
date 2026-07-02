@@ -2,8 +2,14 @@
 #
 # Production image for @discreetly/api. The API has no build step: it runs the
 # TypeScript source directly via tsx. The runtime therefore keeps the workspace
-# TS source, tsx, and the generated Prisma client. Built from the monorepo root:
-#   docker build -f services/api/Dockerfile -t discreetly-api .
+# TS source, tsx, and the generated Prisma client.
+#
+# The @ministryofmany/* SDK deps are `link:../../../minister-client/...` — a
+# SIBLING checkout outside this repo — so the build needs a second, named
+# context supplying it. Built from the monorepo root:
+#   docker buildx build -f services/api/Dockerfile \
+#     --build-context minister-client=../minister-client -t discreetly-api .
+# (compose: build.additional_contexts — see infra/docker-compose.prod.yml)
 
 # ---- deps: install the full workspace and generate the Prisma client ----
 # node:20-bookworm-slim
@@ -21,6 +27,15 @@ RUN corepack enable
 # The API depends on several workspace packages and runs from source, so a
 # selective copy buys little and risks missing a transitive workspace file.
 COPY . .
+
+# The sibling SDK checkout lands at /minister-client, which is exactly where
+# the relative `link:` targets resolve from /app/services/api (../../../).
+COPY --from=minister-client . /minister-client
+
+# pnpm does not install a `link:` target's own dependencies, so give the SDK
+# workspace a production install of its runtime deps (jose, zod, …) — the
+# committed dist/ resolves them from /minister-client/**/node_modules.
+RUN cd /minister-client && pnpm install --prod --frozen-lockfile --ignore-scripts
 
 RUN pnpm install --frozen-lockfile \
   && pnpm --filter @discreetly/db generate
@@ -44,8 +59,10 @@ RUN corepack enable
 RUN chown -R node:node /app
 
 # Carry over the installed workspace (node_modules with the generated Prisma
-# client) and the source tree that tsx executes.
+# client) and the source tree that tsx executes, plus the linked SDK checkout
+# the link: symlinks point into.
 COPY --from=deps --chown=node:node /app /app
+COPY --from=deps --chown=node:node /minister-client /minister-client
 
 USER node
 

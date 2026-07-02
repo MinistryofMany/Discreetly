@@ -1,11 +1,16 @@
 # syntax=docker/dockerfile:1
 #
-# Production image for @discreetly/web (Next.js standalone). Built from the
-# monorepo root:
-#   docker build -f apps/web/Dockerfile \
+# Production image for @discreetly/web (Next.js standalone).
+#
+# The @ministryofmany/* SDK deps are `link:../../../minister-client/...` — a
+# SIBLING checkout outside this repo — so the build needs a second, named
+# context supplying it. Built from the monorepo root:
+#   docker buildx build -f apps/web/Dockerfile \
+#     --build-context minister-client=../minister-client \
 #     --build-arg NEXT_PUBLIC_API_URL=http://localhost:3002 \
 #     --build-arg NEXT_PUBLIC_API_WS_URL=ws://localhost:3002 \
 #     -t discreetly-web .
+# (compose: build.additional_contexts — see infra/docker-compose.prod.yml)
 #
 # NEXT_PUBLIC_* are inlined into the client bundle at BUILD time, so they must be
 # passed as build args (a new image is required to change them). MINISTER_*,
@@ -24,6 +29,14 @@ RUN apt-get update \
 RUN corepack enable
 
 COPY . .
+
+# The sibling SDK checkout lands at /minister-client, which is exactly where
+# the relative `link:` targets resolve from /app/apps/web (../../../). pnpm
+# does not install a link: target's own dependencies, so give the SDK
+# workspace a production install — webpack resolves the committed dist/'s
+# imports (jose, zod, …) from /minister-client/**/node_modules at build time.
+COPY --from=minister-client . /minister-client
+RUN cd /minister-client && pnpm install --prod --frozen-lockfile --ignore-scripts
 
 RUN pnpm install --frozen-lockfile
 
