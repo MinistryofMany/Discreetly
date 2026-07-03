@@ -1,0 +1,53 @@
+name: build-image
+# Build the Discreetly web + api production images and push to GHCR. Both need
+# the sibling minister-client (public) as a named build context.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: build-discreetly-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: ministry-discreetly-web
+            file: apps/web/Dockerfile
+          - image: ministry-discreetly-api
+            file: services/api/Dockerfile
+    steps:
+      - name: Checkout Discreetly
+        uses: actions/checkout@v4
+        with:
+          path: app
+      - name: Checkout minister-client (public sibling)
+        uses: actions/checkout@v4
+        with:
+          repository: MinistryofMany/minister-client
+          path: minister-client
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: app
+          file: app/${{ matrix.file }}
+          build-contexts: |
+            minister-client=minister-client
+          build-args: |
+            NEXT_PUBLIC_API_URL=https://api.discreetly.chat
+            NEXT_PUBLIC_API_WS_URL=wss://api.discreetly.chat
+          push: true
+          tags: ghcr.io/ministryofmany/${{ matrix.image }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
