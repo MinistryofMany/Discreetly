@@ -64,6 +64,17 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3001
 ENV HOSTNAME=0.0.0.0
 
+# Prisma's query engine needs libssl at runtime to detect the OpenSSL version and
+# pick its engine. Without openssl installed, the slim runtime misdetects and
+# looks for the debian-openssl-1.1.x engine, but the client was generated for
+# debian-openssl-3.0.x (native on the bookworm builder), so Prisma fails to
+# initialize -> the Auth.js Prisma adapter throws -> sign-in returns
+# error=Configuration. Installing openssl makes runtime detect 3.0.x, matching
+# the bundled engine.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
 # Run as a non-root user.
 RUN addgroup --system --gid 1001 nodejs \
   && adduser --system --uid 1001 nextjs
