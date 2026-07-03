@@ -3,6 +3,7 @@ import { PrismaAdapter } from '@auth/prisma-adapter';
 import { prisma } from '@discreetly/db';
 import { ministerProvider } from '@ministryofmany/client/auth-js';
 import { decodeMinisterClaims } from '@/lib/minister-claims';
+import { refreshMinisterAccountTokens } from '@/lib/minister-account';
 
 // Auth.js v5 RP for Discreetly. Signs in via Minister using the
 // `@ministryofmany/client` provider helper, which returns the same generic OIDC
@@ -25,9 +26,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
   // Database strategy: opaque cookie -> Session row. maxAge keeps the Auth.js
   // default of 30 days (30 * 24 * 60 * 60 s) so login lifetime is unchanged.
-  // NOTE: the forwarded Minister id_token is short-lived (~10 min) and has no
-  // refresh path, so gated API calls fail once it expires until re-auth - a
-  // pre-existing limitation, documented in docs/auth-session-model.md.
+  // NOTE: the forwarded Minister id_token is short-lived (~10 min). Each sign-in
+  // now re-persists the fresh token (see `events.signIn` below), so re-auth
+  // always yields a fresh `session.idToken`. Mid-session (a login held longer
+  // than the token lifetime) the header token still expires; the JOIN path
+  // already mints a fresh per-room token, and refreshing the admin path
+  // mid-session (offline_access refresh or on-demand mint) is a tracked
+  // follow-up - see docs/auth-session-model.md.
   session: { strategy: 'database', maxAge: 30 * 24 * 60 * 60 },
   providers: [
     ministerProvider({
@@ -44,6 +49,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       scopes: ['openid', 'profile'],
     }),
   ],
+  events: {
+    // The Prisma adapter persists the Minister id_token via `linkAccount` only
+    // on the FIRST account-link; on every later sign-in Auth.js core finds the
+    // account and returns without re-persisting, so the stored token goes stale.
+    // `events.signIn` fires on every sign-in (new and returning) AFTER the
+    // Account row exists, with the fresh `account` from the token endpoint, so
+    // re-persist the fresh tokens here. This is the only path that reaches the
+    // fresh id_token under database strategy (no jwt callback runs). A missing
+    // account (e.g. non-OAuth event) is a no-op.
+    async signIn({ account }) {
+      if (account?.provider === MINISTER_PROVIDER_ID) {
+        await refreshMinisterAccountTokens(account);
+      }
+    },
+  },
   callbacks: {
     // Under database strategy the session callback receives the adapter `user`
     // (not a JWT token). The Minister id_token was persisted on the Account row
