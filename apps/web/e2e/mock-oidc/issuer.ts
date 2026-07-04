@@ -38,6 +38,30 @@ async function jwks(port: number): Promise<{ keys: JWK[] }> {
   return { keys: [{ ...publicJwk, alg: 'EdDSA', use: 'sig', kid: kidForPort(port) }] };
 }
 
+/**
+ * did:web DID document at `/.well-known/did.json`. The SDK verifier pins badge
+ * VC keys to the DID document's `assertionMethod` — NOT the raw JWKS — so
+ * Minister's token key can never attest a badge (the KMS split). A badge whose
+ * `kid` is absent from `assertionMethod` is rejected outright, which means this
+ * endpoint is REQUIRED: without it every badge lands in `rejected` (fails
+ * closed) and every gated join is denied. Mirrors the live Minister document:
+ * the badge signing key is the sole `assertionMethod` entry.
+ */
+async function didDocument(port: number): Promise<Record<string, unknown>> {
+  publicJwk ??= await exportJWK(publicKey);
+  const did = vcIssuerForPort(port);
+  const kid = kidForPort(port);
+  return {
+    '@context': ['https://www.w3.org/ns/did/v1', 'https://w3id.org/security/suites/jws-2020/v1'],
+    id: did,
+    verificationMethod: [
+      { id: kid, type: 'JsonWebKey2020', controller: did, publicKeyJwk: publicJwk },
+    ],
+    assertionMethod: [kid],
+    authentication: [kid],
+  };
+}
+
 export interface MockBadge {
   type: string;
   attributes: Record<string, string | number | boolean>;
@@ -368,6 +392,10 @@ async function handle(req: IncomingMessage, res: ServerResponse, issuer: string)
 
   if (path === '/.well-known/jwks.json') {
     return json(res, await jwks(Number(new URL(issuer).port)));
+  }
+
+  if (path === '/.well-known/did.json') {
+    return json(res, await didDocument(Number(new URL(issuer).port)));
   }
 
   if (path === '/oidc/authorize') return authorize(req, res, url);
