@@ -17,11 +17,15 @@ export const API_URL = `http://localhost:${API_PORT}`;
 export const API_WS_URL = `ws://localhost:${API_PORT}`;
 export const WEB_URL = `http://localhost:${WEB_PORT}`;
 
-/** Base admin connection (to the default `postgres` db) for CREATE DATABASE. */
-const PG_USER = 'discreetly';
-const PG_PASSWORD = 'discreetly';
-const PG_HOST = 'localhost';
-const PG_PORT = 5432;
+/**
+ * Base admin connection (to the default `postgres` db) for CREATE DATABASE.
+ * Defaults match the CI service container; override via E2E_PG_* for a local
+ * Postgres whose credentials differ (e.g. the rotated ministry-dev password).
+ */
+const PG_USER = process.env.E2E_PG_USER ?? 'discreetly';
+const PG_PASSWORD = process.env.E2E_PG_PASSWORD ?? 'discreetly';
+const PG_HOST = process.env.E2E_PG_HOST ?? 'localhost';
+const PG_PORT = Number(process.env.E2E_PG_PORT ?? 5432);
 export const E2E_DB_NAME = 'discreetly_e2e';
 
 export const PG_ADMIN_URL = `postgresql://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/postgres`;
