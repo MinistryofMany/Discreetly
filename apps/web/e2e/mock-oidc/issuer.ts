@@ -230,7 +230,7 @@ const BADGE_CATALOG: Record<string, MockBadge> = {
   'invite-code': { type: 'invite-code', attributes: { label: 'WELCOME' } },
   'oauth-account': {
     type: 'oauth-account',
-    attributes: { provider: 'github', accountId: 'gh-123' },
+    attributes: { provider: 'github', handle: 'octocat' },
   },
   'residency-country': { type: 'residency-country', attributes: { country: 'US' } },
   'age-over-18': { type: 'age-over-18', attributes: { threshold: 18 } },
