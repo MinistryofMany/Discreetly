@@ -23,7 +23,7 @@ on:
 env:
   # Resolved at the workflow level so both jobs share the same values.
   PNPM_VERSION: "9.12.0"
-  NODE_VERSION: "20"
+  NODE_VERSION: "24"
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -68,7 +68,7 @@ jobs:
 
     steps:
       - name: Checkout Discreetly
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: Discreetly
 
@@ -77,19 +77,19 @@ jobs:
       # `--build-context minister-client=../minister-client`). Check it out next
       # to Discreetly so the relative link: targets resolve.
       - name: Checkout minister-client (linked SDK)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: MinistryofMany/minister-client
           path: minister-client
 
       # --- pnpm + Node setup ------------------------------------------------
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
@@ -199,25 +199,25 @@ jobs:
 
     steps:
       - name: Checkout Discreetly
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: Discreetly
 
       # Sibling SDK checkout so the link:../../../minister-client/... deps
       # resolve (see the ci job for the rationale).
       - name: Checkout minister-client (linked SDK)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: MinistryofMany/minister-client
           path: minister-client
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
@@ -266,7 +266,7 @@ jobs:
       # Upload the HTML report on failure so it can be inspected.
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: Discreetly/apps/web/playwright-report/

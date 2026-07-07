@@ -24,11 +24,11 @@ jobs:
             file: services/api/Dockerfile
     steps:
       - name: Checkout Discreetly
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: app
       - name: Checkout minister-client (public sibling)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: MinistryofMany/minister-client
           path: minister-client
