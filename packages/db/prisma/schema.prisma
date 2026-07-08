@@ -46,6 +46,9 @@ model Room {
   encryption       RoomEncryption  @default(PLAINTEXT)
   passwordHash     String?
   accessPolicy     Json
+  /// Operator-curated ordering: pinned rooms sort first in the public listing
+  /// so a fresh deployment can surface seeded/starter rooms.
+  pinned           Boolean         @default(false)
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
@@ -118,18 +121,22 @@ model Message {
   // nullifier). `deletedBy` is the operator's Minister pairwise sub.
   deletedAt    DateTime?
   deletedBy    String?
+  /// CLIENT-ASSERTED moderation link from a message to the sender's room
+  /// membership (its join nullifier). The stock client attaches its own join
+  /// nullifier on send; the server validates it against an EXISTING membership
+  /// of the room (unknown values are stored as null) but CANNOT prove
+  /// ownership - the RLN proof is anonymous within the tree, so a modified
+  /// client can omit it. PRIVACY TRADE-OFF (deliberate, operator-requested):
+  /// this links a stock client's messages to its membership FOR THE OPERATOR
+  /// AND THE DATABASE, across epochs. It is never returned by the public
+  /// message.list / message.subscribe outputs - only the admin ban-author path
+  /// reads it server-side.
+  senderJoinNullifier String?
 
   @@unique([roomId, epoch, rlnNullifier])
   @@index([roomId, epoch])
   // Ordered prune (newest-1000 ring buffer) and newest-first history reads.
   @@index([roomId, createdAt])
-}
-
-model AdminUser {
-  id          String   @id @default(cuid())
-  pairwiseSub String   @unique
-  label       String?
-  createdAt   DateTime @default(now())
 }
 
 /// Per-room SDK disclosure flow state (Phase 3 / Path B). The RP "start join"
@@ -182,8 +189,9 @@ model AuditLog {
 // `apps/web`. The web app stores login sessions as opaque Session rows (cookie
 // holds only the sessionToken); the Account row persists the Minister OAuth
 // tokens (including `id_token`) at sign-in. Field names are the canonical names
-// the adapter requires verbatim - do not rename. These are unrelated to the
-// `AdminUser` model above (admin authorization, keyed on Minister pairwise sub).
+// the adapter requires verbatim - do not rename. Operator (admin) authorization
+// is NOT stored here: it is an env allowlist of Minister pairwise subs
+// (DISCREETLY_OPERATOR_SUBS, read by the API at boot).
 model User {
   id            String    @id @default(cuid())
   name          String?
