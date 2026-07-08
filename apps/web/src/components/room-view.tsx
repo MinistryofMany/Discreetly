@@ -209,10 +209,11 @@ export function RoomView({ roomId }: { roomId: string }) {
   );
 
   // Operator-only: ban the author of a message. The server resolves the
-  // message's stored (client-asserted, membership-validated) join nullifier;
-  // the nullifier itself never reaches this client. Messages without a link
-  // (pre-feature, ephemeral, or a client that omitted it) fail with a clear
-  // error; the admin Bans tab's raw-nullifier form is the manual fallback.
+  // message's stored author link (the membership matched at write time from
+  // the sender's own random author token); no token or nullifier ever reaches
+  // this client. Messages without a link (pre-feature, ephemeral, or a client
+  // that omitted it) fail with a clear error; the admin Bans tab's
+  // raw-nullifier form is the manual fallback.
   const banAuthorMut = useMutation(trpc.admin.banMessageAuthor.mutationOptions());
   const handleBanAuthor = React.useCallback(
     (id: string) => {

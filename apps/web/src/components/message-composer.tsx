@@ -116,18 +116,18 @@ export function MessageComposer({
         JSON.stringify(proof, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)),
       );
 
-      // Client-asserted author link for operator moderation (ban-author). The
-      // stock client attaches its own join nullifier recorded at join time;
+      // Author link for operator moderation (ban-author). The stock client
+      // attaches its own random membership secret recorded at join time;
       // absent (older join, cleared storage) the send still goes through - the
       // RLN proof alone authorizes it.
-      const joinNullifier = getLocalMembership(room.id)?.joinNullifier;
+      const authorToken = getLocalMembership(room.id)?.authorToken;
 
       const result = (await sendMutation.mutateAsync({
         roomId: room.id,
         content: wire,
         proof: proofJson,
         sessionColor: getSessionColor(),
-        ...(joinNullifier ? { joinNullifier } : {}),
+        ...(authorToken ? { authorToken } : {}),
       })) as SendOutcome;
 
       const outcome = describeSend(result);

@@ -393,32 +393,47 @@ export const adminRouter = router({
     ),
 
   /**
-   * Ban the sender of a persisted message via its CLIENT-ASSERTED
-   * `senderJoinNullifier` (attached by the stock client on send and validated
-   * against an existing membership at write time; see messaging/pipeline.ts).
-   * The nullifier never leaves the server here - the operator only supplies
-   * the messageId. Fails with BAD_REQUEST when the message carries no author
-   * link (pre-feature message, ephemeral relay, or a client that omitted it);
-   * the Bans tab's raw-nullifier form remains the manual fallback.
+   * Ban the sender of a persisted message via its stored `senderMembershipId`
+   * author link (resolved at write time from the sender's random membership
+   * `authorToken`; see messaging/pipeline.ts). Neither the token nor the
+   * nullifier ever leaves the server here - the operator only supplies the
+   * messageId. Fails with BAD_REQUEST when the message carries no author link
+   * (pre-feature message, ephemeral relay, or a client that omitted the
+   * token); the Bans tab's raw-nullifier form remains the manual fallback.
    */
   banMessageAuthor: adminProcedure
     .input(z.object({ messageId: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const message = await prisma.message.findUnique({
         where: { id: input.messageId },
-        select: { id: true, roomId: true, senderJoinNullifier: true },
+        select: { id: true, roomId: true, senderMembershipId: true },
       });
       if (!message) throw new TRPCError({ code: 'NOT_FOUND', message: 'message not found' });
-      if (!message.senderJoinNullifier) {
+      if (!message.senderMembershipId) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
           message:
-            'message has no author link - the sender did not attach a join nullifier. Ban manually from the Bans tab.',
+            'message has no author link - the sender did not attach an author token. Ban manually from the Bans tab.',
+        });
+      }
+      // Resolve the linked membership's join nullifier so the ban reuses the
+      // canonical nullifier-keyed path (Ban row + audit + admin.bans/unban all
+      // key on it). A dangling link (membership row deleted; the FK nulls the
+      // column, but guard the race) fails closed as "no author link".
+      const membership = await prisma.membership.findUnique({
+        where: { id: message.senderMembershipId },
+        select: { joinNullifier: true },
+      });
+      if (!membership) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message:
+            'message author link no longer resolves to a membership. Ban manually from the Bans tab.',
         });
       }
       const outcome = await banByJoinNullifier({
         roomId: message.roomId,
-        joinNullifier: message.senderJoinNullifier,
+        joinNullifier: membership.joinNullifier,
         actor: ctx.adminSub,
       });
       return { ok: true as const, prunedLeaves: outcome.prunedLeaves };

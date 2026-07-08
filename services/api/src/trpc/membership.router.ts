@@ -39,17 +39,18 @@ export const membershipRouter = router({
         verify: ctx.verify,
       });
       if (!gate.allowed) return { ok: false as const, reason: 'policy-denied' as const };
-      const joined = await joinRoom({
+      // On success the result carries the caller's OWN random `authorToken`
+      // (server-generated at membership creation, unguessable). The stock
+      // client stores it locally and attaches it to message.send as the
+      // moderation author link (ban-author path). It is returned only here -
+      // to the joiner, who just proved ownership of the membership's sub via
+      // the verified id_token - and never by any other output.
+      return joinRoom({
         room,
         joinNullifier: gate.joinNullifier.toString(),
         identityCommitment: input.identityCommitment,
         deviceLabel: input.deviceLabel,
       });
-      if (!joined.ok) return joined;
-      // Return the caller's OWN room pseudonym (derived server-side from their
-      // verified sub). The stock client stores it locally and attaches it to
-      // message.send as the client-asserted moderation link (ban-author path).
-      return { ...joined, joinNullifier: gate.joinNullifier.toString() };
     }),
   rotate: publicProcedure
     .input(

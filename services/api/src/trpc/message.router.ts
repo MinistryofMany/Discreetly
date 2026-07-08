@@ -17,11 +17,15 @@ export const messageRouter = router({
         content: z.string().max(16384),
         proof: z.unknown(),
         sessionColor: z.string().max(64).optional(),
-        // CLIENT-ASSERTED moderation link: the sender's own join nullifier
-        // (decimal bigint string), validated against an existing membership in
-        // the pipeline and stored operator-only. Optional by design - the RLN
-        // proof alone authorizes the send (see pipeline.ts for the trade-off).
-        joinNullifier: z.string().regex(/^\d{1,100}$/).optional(),
+        // Moderation author link: the sender's own random membership secret
+        // (64 hex chars), issued by membership.join. The pipeline resolves it
+        // to a membership of THIS room and stores the membershipId
+        // operator-only; unknown/forged values are dropped. Optional by
+        // design - the RLN proof alone authorizes the send (see pipeline.ts).
+        authorToken: z
+          .string()
+          .regex(/^[0-9a-f]{64}$/)
+          .optional(),
       }),
     )
     .mutation(async ({ input }) =>
@@ -30,7 +34,7 @@ export const messageRouter = router({
         content: input.content,
         proof: input.proof as RlnProof,
         sessionColor: input.sessionColor,
-        joinNullifier: input.joinNullifier,
+        authorToken: input.authorToken,
       }),
     ),
 

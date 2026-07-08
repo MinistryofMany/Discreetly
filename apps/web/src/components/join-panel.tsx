@@ -89,12 +89,13 @@ export function JoinPanel({
         idToken: idTokenForJoin,
         identityCommitment: identity.commitment.toString(),
         deviceLabel: deviceLabel.trim() || undefined,
-      })) as { ok: boolean; reason?: string; joinNullifier?: string };
+      })) as { ok: boolean; reason?: string; authorToken?: string };
 
       if (res.ok) {
         // Local join record: powers the rooms-home "Joined" section and the
-        // composer's client-asserted author link (operator moderation).
-        if (res.joinNullifier) recordLocalMembership(room.id, res.joinNullifier);
+        // composer's author link (operator moderation). The authorToken is
+        // this membership's own random secret, returned only to the joiner.
+        if (res.authorToken) recordLocalMembership(room.id, res.authorToken);
         toast.success('Joined the room.');
         onJoined();
       } else {
