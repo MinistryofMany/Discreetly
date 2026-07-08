@@ -24,6 +24,14 @@ const schema = z.object({
    * mismatch instead of silently rejecting every badge at runtime.
    */
   MINISTER_VC_ISSUER: z.string().startsWith('did:web:').optional(),
+  /**
+   * Operator (admin) allowlist: comma-separated Minister pairwise subs, as
+   * issued to THIS relying party (the sub shown on /identity and /admin after
+   * signing in). Every admin procedure requires the caller's verified id_token
+   * sub to be in this list. FAIL CLOSED: when unset or empty there is no
+   * operator and every admin call is FORBIDDEN.
+   */
+  DISCREETLY_OPERATOR_SUBS: z.string().default(''),
   API_PORT: z.coerce.number().default(3002),
 
   // Transport-layer (per-IP) abuse rate limiting. Disabled in tests/e2e to
@@ -92,4 +100,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 let cached: Config | undefined;
 export function getConfig(): Config {
   return (cached ??= loadConfig());
+}
+
+/**
+ * Parse a comma-separated operator-sub allowlist into a set. Entries are
+ * trimmed; empties are dropped, so ""/",," parse to an EMPTY set (fail closed:
+ * no operator), never to a set containing "".
+ */
+export function parseOperatorSubs(raw: string): ReadonlySet<string> {
+  return new Set(
+    raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0),
+  );
 }

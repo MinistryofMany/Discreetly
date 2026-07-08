@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { decryptContent, isEncryptedEnvelope } from '@/lib/crypto-box';
-import { identiconDataUri } from '@/lib/session-color';
+import { identiconDataUri, sessionHandle } from '@/lib/session-color';
 import type { ChatBroadcast, FeedItem } from '@/lib/broadcast-types';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -21,11 +21,14 @@ function ChatRow({
   msg,
   aesKey,
   onDelete,
+  onBanAuthor,
 }: {
   msg: ChatBroadcast;
   aesKey: CryptoKey | null;
   /** Operator-only: tombstone this message. Absent for non-operators. */
   onDelete?: (id: string) => void;
+  /** Operator-only: ban this message's author (server resolves the link). */
+  onBanAuthor?: (id: string) => void;
 }) {
   const color = msg.sessionColor ?? '#64748b';
   const seed = msg.sessionColor ?? msg.id;
@@ -80,20 +83,34 @@ function ChatRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <span className="text-xs font-medium" style={{ color }}>
-            anon
+            {sessionHandle(seed)}
           </span>
           <span className="text-[10px] text-muted-foreground">
             {formatTime(msg.createdAt)}
           </span>
-          {onDelete ? (
-            <button
-              type="button"
-              aria-label="Remove message"
-              className="ml-auto text-[10px] text-destructive opacity-0 transition-opacity hover:underline group-hover:opacity-100"
-              onClick={() => onDelete(msg.id)}
-            >
-              remove
-            </button>
+          {onDelete || onBanAuthor ? (
+            <span className="ml-auto flex gap-2 opacity-0 transition-opacity group-hover:opacity-100">
+              {onDelete ? (
+                <button
+                  type="button"
+                  aria-label="Remove message"
+                  className="text-[10px] text-destructive hover:underline"
+                  onClick={() => onDelete(msg.id)}
+                >
+                  remove
+                </button>
+              ) : null}
+              {onBanAuthor ? (
+                <button
+                  type="button"
+                  aria-label="Ban message author"
+                  className="text-[10px] text-destructive hover:underline"
+                  onClick={() => onBanAuthor(msg.id)}
+                >
+                  ban author
+                </button>
+              ) : null}
+            </span>
           ) : null}
         </div>
         {decryptFailed ? (
@@ -125,13 +142,19 @@ export function MessageFeed({
   items,
   aesKey,
   loading,
+  ephemeral = false,
   onDelete,
+  onBanAuthor,
 }: {
   items: FeedItem[];
   aesKey: CryptoKey | null;
   loading: boolean;
+  /** EPHEMERAL room: keeps no history, so the empty state says so. */
+  ephemeral?: boolean;
   /** Operator-only: tombstone a message by id. Absent for non-operators. */
   onDelete?: (id: string) => void;
+  /** Operator-only: ban a message's author by message id. */
+  onBanAuthor?: (id: string) => void;
 }) {
   const bottomRef = React.useRef<HTMLDivElement>(null);
 
@@ -144,7 +167,11 @@ export function MessageFeed({
       <div className="flex flex-col gap-0.5 p-3">
         {items.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
-            {loading ? 'Connecting...' : 'No messages yet. Say something.'}
+            {loading
+              ? 'Connecting...'
+              : ephemeral
+                ? 'This room keeps no history. Messages appear here only while you are in the room.'
+                : 'No messages yet. Say something.'}
           </p>
         ) : (
           items.map((item) => {
@@ -157,6 +184,7 @@ export function MessageFeed({
                   msg={item.broadcast}
                   aesKey={aesKey}
                   onDelete={item.broadcast.deleted ? undefined : onDelete}
+                  onBanAuthor={item.broadcast.deleted ? undefined : onBanAuthor}
                 />
               );
             }

@@ -6,6 +6,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { subFor } from '../mock-oidc/issuer.js';
 import {
   API_PORT,
   API_URL,
@@ -119,6 +120,9 @@ export async function startServers(): Promise<RunningServers> {
       MINISTER_CLIENT_ID: MOCK_CLIENT_ID,
       API_PORT: String(API_PORT),
       ALLOWED_WS_ORIGINS: `${WEB_URL},http://localhost:${WEB_PORT}`,
+      // The operator gate is an env allowlist; grant it to the deterministic
+      // e2e admin identity (admin@example.com in the mock issuer).
+      DISCREETLY_OPERATOR_SUBS: subFor('admin@example.com'),
       // Disable transport-layer rate limiting so e2e bursts never flake.
       RATE_LIMIT_ENABLED: 'false',
     },

@@ -3,12 +3,12 @@
 import * as React from 'react';
 import { toast } from 'sonner';
 import { useMutation } from '@tanstack/react-query';
-import { useSession } from 'next-auth/react';
 import { useTRPC } from '@/lib/trpc';
 import { useIdentity } from '@/lib/identity-context';
 import { currentEpoch, nextMessageId } from '@/lib/rln';
 import { encryptContent } from '@/lib/crypto-box';
 import { getSessionColor } from '@/lib/session-color';
+import { getLocalMembership } from '@/lib/local-membership';
 import type { PublicRoom } from '@/lib/room-types';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -56,7 +56,6 @@ export function MessageComposer({
 }) {
   const trpc = useTRPC();
   const { identity } = useIdentity();
-  const { data: session } = useSession();
   const [content, setContent] = React.useState('');
   const [sending, setSending] = React.useState(false);
 
@@ -70,10 +69,6 @@ export function MessageComposer({
   async function handleSend() {
     if (!identity) {
       toast.error('Unlock your identity to send.');
-      return;
-    }
-    if (!session?.idToken) {
-      toast.error('Sign in to send.');
       return;
     }
     const text = content.trim();
@@ -121,11 +116,18 @@ export function MessageComposer({
         JSON.stringify(proof, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)),
       );
 
+      // Author link for operator moderation (ban-author). The stock client
+      // attaches its own random membership secret recorded at join time;
+      // absent (older join, cleared storage) the send still goes through - the
+      // RLN proof alone authorizes it.
+      const authorToken = getLocalMembership(room.id)?.authorToken;
+
       const result = (await sendMutation.mutateAsync({
         roomId: room.id,
         content: wire,
         proof: proofJson,
         sessionColor: getSessionColor(),
+        ...(authorToken ? { authorToken } : {}),
       })) as SendOutcome;
 
       const outcome = describeSend(result);

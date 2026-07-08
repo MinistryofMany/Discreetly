@@ -39,6 +39,12 @@ export const membershipRouter = router({
         verify: ctx.verify,
       });
       if (!gate.allowed) return { ok: false as const, reason: 'policy-denied' as const };
+      // On success the result carries the caller's OWN random `authorToken`
+      // (server-generated at membership creation, unguessable). The stock
+      // client stores it locally and attaches it to message.send as the
+      // moderation author link (ban-author path). It is returned only here -
+      // to the joiner, who just proved ownership of the membership's sub via
+      // the verified id_token - and never by any other output.
       return joinRoom({
         room,
         joinNullifier: gate.joinNullifier.toString(),

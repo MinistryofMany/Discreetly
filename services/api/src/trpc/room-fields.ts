@@ -12,6 +12,7 @@ export const PUBLIC_ROOM_FIELDS = {
   persistence: true,
   encryption: true,
   accessPolicy: true,
+  pinned: true,
   createdAt: true,
   updatedAt: true,
 } as const;

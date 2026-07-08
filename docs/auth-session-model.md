@@ -75,6 +75,26 @@ refresh tokens, does not support `offline_access`, and does not support
 `prompt=none` silent re-authentication. The id_token captured at sign-in is never
 renewed.
 
+Verified against Minister source (2026-07-08, read-only):
+
+- `apps/minister/src/app/oidc/token/route.ts` rejects every
+  `grant_type` other than `authorization_code` (`unsupported_grant_type`), and
+  its token response contains no `refresh_token` member at all, so requesting
+  `offline_access` cannot yield one.
+- `apps/minister/src/lib/oidc-authorize.ts` parses no `prompt` (or `max_age` /
+  `id_token_hint`) parameter, and `/oidc/authorize` always renders the
+  interactive consent screen - there is no remembered-consent auto-approval -
+  so a hidden-iframe `prompt=none` re-auth cannot complete without user
+  interaction.
+- Minister's project docs list refresh tokens as an explicit non-goal.
+
+A silent id_token refresh therefore requires a Minister-side change (a refresh
+grant, or `prompt=none` plus remembered consent). Until one lands, the
+supported recovery is the one-click re-auth: the admin page's `expired` state
+(`use-is-admin.ts` maps a locally-detected expiry or an API 401 to it) renders
+a "Sign in again" button that re-runs `signIn('minister')` and re-persists a
+fresh token via `events.signIn`.
+
 The web login session, by contrast, lives for 30 days. So the forwarded bearer
 token expires long before the login session does. Once the stored id_token
 expires:

@@ -107,14 +107,17 @@ test('device-limit: a second device join is refused when maxDevices is 1', async
 
   // Provision a SECOND local device identity for the SAME signed-in user. The
   // identity panel only exposes "Remove from device" once unlocked, so unlock
-  // first, remove (auto-accepting the confirm), then create a fresh identity.
-  // The Minister sub is unchanged, so it maps to the same membership.
+  // first, remove (via the styled confirmation dialog), then create a fresh
+  // identity. The Minister sub is unchanged, so it maps to the same membership.
   await page.goto('/identity');
   await page.getByLabel('Password', { exact: true }).fill(ID_PASSWORD);
   await page.getByRole('button', { name: /^unlock$/i }).click();
   await expect(page.getByText(/^Unlocked$/)).toBeVisible({ timeout: 15_000 });
-  page.once('dialog', (d) => void d.accept());
   await page.getByRole('button', { name: /remove from device/i }).click();
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: /^remove$/i })
+    .click();
   await expect(page.getByRole('button', { name: /^create identity$/i })).toBeVisible({
     timeout: 15_000,
   });

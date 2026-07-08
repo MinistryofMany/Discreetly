@@ -3,8 +3,6 @@ import {
   signIn,
   createIdentity,
   resetData,
-  seedAdmin,
-  subFor,
   getPrisma,
   unique,
 } from './harness/helpers.js';
@@ -26,7 +24,6 @@ test.setTimeout(180_000);
 
 test.beforeAll(async () => {
   await resetData();
-  await seedAdmin(subFor(ADMIN_EMAIL));
 });
 
 async function createRoom(opts: { name: string; slug: string }) {
@@ -79,6 +76,15 @@ test('operator soft-deletes a message: it renders as a tombstone in place and th
   await expect.poll(() => db.message.count({ where: { roomId: room.id } })).toBe(1);
 
   const stored = await db.message.findFirstOrThrow({ where: { roomId: room.id } });
+
+  // The stock client attached the random author token it recorded at join and
+  // the pipeline resolved it to the sender's membership: the author link is
+  // persisted (this is what admin.banMessageAuthor resolves server-side).
+  expect(stored.senderMembershipId).not.toBeNull();
+  const authorMembership = await db.membership.findFirst({
+    where: { roomId: room.id, id: stored.senderMembershipId! },
+  });
+  expect(authorMembership).not.toBeNull();
 
   // Operator removes the message via the in-feed control.
   await page.getByRole('button', { name: /remove message/i }).click();

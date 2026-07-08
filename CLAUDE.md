@@ -149,6 +149,7 @@ MINISTER_CLIENT_ID="discreetly_dev"
 MINISTER_CLIENT_SECRET="<from Minister dev config>"
 API_PORT="3002"
 ALLOWED_WS_ORIGINS="http://localhost:3000,http://localhost:3001,http://localhost:5173"
+DISCREETLY_OPERATOR_SUBS="<your Minister pairwise sub>"
 ```
 
 Note: `DATABASE_URL`, `REDIS_URL`, `MINISTER_ISSUER`, `MINISTER_CLIENT_ID`, and
@@ -161,7 +162,11 @@ derivation at boot and fails loud on an unusable issuer. Optionally set
 the derived DID equals it (catches the host-mismatch foot-gun at startup
 instead of silently rejecting every badge at runtime). `ALLOWED_WS_ORIGINS` is
 read directly from `process.env` in `server.ts` with a hardcoded fallback and
-is not part of the zod schema.
+is not part of the zod schema. `DISCREETLY_OPERATOR_SUBS` is the operator
+(admin) allowlist: comma-separated Minister pairwise subs; every `admin.*`
+procedure requires the caller's verified id_token sub to be in it, and it FAILS
+CLOSED (unset/empty = no operator, every admin call FORBIDDEN). A signed-in
+user finds their sub on `/identity` (or the `/admin` not-authorized panel).
 
 **`apps/web/.env.local`:**
 

@@ -88,9 +88,10 @@ async function openRoomUnlocked(page: Page, roomId: string): Promise<void> {
  */
 async function discloseForRoom(page: Page, roomId: string, email: string): Promise<void> {
   await openRoomUnlocked(page, roomId);
-  // Either the first-time "Sign in with Minister" or the "Sign in to disclose
-  // badges" button starts the SDK flow; both navigate to /api/room-auth/start.
-  const signIn = page.getByRole('button', { name: /sign in (with minister|to disclose badges)/i });
+  // The per-room disclosure CTA ("Disclose badges for this room" - rendered
+  // both without any token and alongside an inert Join on a gated room)
+  // starts the SDK flow; it navigates to /api/room-auth/start.
+  const signIn = page.getByRole('button', { name: /disclose badges for this room/i });
   await signIn.first().click();
   await consent(page, email);
   // Back on the room with `?roomAuthPickup=...`; RoomView picks the fresh
@@ -205,10 +206,14 @@ test('a missing required badge denies inline: no leaf is created', async ({ page
   await consent(page, email);
   await createIdentity(page, ID_PASSWORD);
 
-  // Attempt Join directly with only the badge-free global session token.
+  // With only the badge-free global session token, Join is inert (disabled)
+  // and the disclosure CTA is the primary action - the badge-free token can
+  // never satisfy the gate, so the UI no longer offers the doomed join.
   await openRoomUnlocked(page, room.id);
-  await page.getByRole('button', { name: /^join$/i }).click();
-  await expect(page.getByText(/do not satisfy this room/i)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole('button', { name: /^join$/i })).toBeDisabled();
+  await expect(
+    page.getByRole('button', { name: /disclose badges for this room/i }),
+  ).toBeVisible();
   await expect.poll(() => db.membershipLeaf.count({ where: { roomId: room.id } })).toBe(0);
 });
 

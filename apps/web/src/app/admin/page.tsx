@@ -2,9 +2,11 @@
 
 import * as React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useSession } from 'next-auth/react';
+import { signIn } from 'next-auth/react';
 import { toast } from 'sonner';
 import { useTRPC } from '@/lib/trpc';
+import { useOperatorStatus } from '@/components/shell/use-is-admin';
+import { MinisterSub } from '@/components/minister-sub';
 import {
   type AdminRoom,
   type AdminMembership,
@@ -12,6 +14,7 @@ import {
   asAdminRooms,
   asAdminMemberships,
   asAuditLogRows,
+  asBanRows,
 } from '@/lib/admin-types';
 import {
   type PolicyBuilderNode,
@@ -20,6 +23,7 @@ import {
   deserializeNode,
 } from '@/lib/policy-builder';
 import { PolicyBuilder } from '@/components/admin/policy-builder';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -97,36 +101,79 @@ function useAdminMutation<
 
 // ---- Auth gate ---------------------------------------------------------------
 
+/**
+ * Operator console gate. The verdict comes from `useOperatorStatus`, which
+ * mirrors the API's DISCREETLY_OPERATOR_SUBS env allowlist and NEVER retries
+ * or busy-loops on failure: every non-operator outcome renders a terminal
+ * state with an explicit manual action (sign in / copy sub), not a spinner.
+ */
 function AdminGate({ children }: { children: React.ReactNode }) {
-  const trpc = useTRPC();
-  // whoami forwards the session id_token as a Bearer header. Wait until the
-  // session has loaded so the very first request carries the token (otherwise
-  // an unauthenticated request 401s and, with retry disabled, never recovers).
-  const { status } = useSession();
-  const authenticated = status === 'authenticated';
-  const whoami = useQuery({
-    ...trpc.admin.whoami.queryOptions(),
-    retry: false,
-    enabled: authenticated,
-  });
+  const operator = useOperatorStatus();
 
-  if (status === 'loading' || (authenticated && (whoami.isLoading || whoami.isPending))) {
+  if (operator.state === 'operator') return <>{children}</>;
+
+  if (operator.state === 'loading') {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
-        <span className="text-sm text-muted-foreground">Checking admin access...</span>
+        <span className="text-sm text-muted-foreground">Checking operator access...</span>
       </div>
     );
   }
 
-  if (!authenticated || whoami.isError || !whoami.data) {
-    return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <p className="text-sm text-destructive">Not authorized.</p>
-      </div>
+  const panel = (body: React.ReactNode) => (
+    <div className="flex min-h-[40vh] items-center justify-center px-4">
+      <div className="w-full max-w-md space-y-4 rounded-lg border bg-card p-6">{body}</div>
+    </div>
+  );
+
+  if (operator.state === 'signed-out') {
+    return panel(
+      <>
+        <h2 className="text-base font-semibold">Operator console</h2>
+        <p className="text-sm text-muted-foreground">
+          Sign in with Minister to access the operator console.
+        </p>
+        <Button onClick={() => void signIn('minister')}>Sign in with Minister</Button>
+      </>,
     );
   }
 
-  return <>{children}</>;
+  if (operator.state === 'expired') {
+    return panel(
+      <>
+        <h2 className="text-base font-semibold">Admin session expired</h2>
+        <p className="text-sm text-muted-foreground">
+          Your Minister id_token has expired (it is much shorter-lived than the login session).
+          Sign in again to continue - nothing else is wrong.
+        </p>
+        <Button onClick={() => void signIn('minister')}>Sign in again</Button>
+      </>,
+    );
+  }
+
+  if (operator.state === 'not-operator') {
+    return panel(
+      <>
+        <h2 className="text-base font-semibold">Not authorized</h2>
+        <p className="text-sm text-muted-foreground">
+          This account is not an operator. To grant it access, add its Minister sub to the
+          API&apos;s <code className="font-mono text-xs">DISCREETLY_OPERATOR_SUBS</code>{' '}
+          (comma-separated) and restart the API.
+        </p>
+        <MinisterSub />
+      </>,
+    );
+  }
+
+  // state === 'error': a transport/server failure, NOT an auth verdict. Render
+  // terminally with the message; the user can retry by reloading.
+  return panel(
+    <>
+      <h2 className="text-base font-semibold">Operator check failed</h2>
+      <p className="text-sm text-destructive">{operator.errorMessage ?? 'Unknown error.'}</p>
+      <p className="text-sm text-muted-foreground">Reload the page to try again.</p>
+    </>,
+  );
 }
 
 // ---- Room form state ---------------------------------------------------------
@@ -500,15 +547,25 @@ function RoomsTab() {
   const [editRoom, setEditRoom] = React.useState<AdminRoom | null>(null);
   const [deleteId, setDeleteId] = React.useState<string | null>(null);
   const [deleting, setDeleting] = React.useState(false);
+  const [seeding, setSeeding] = React.useState(false);
+  // Room id with a pin/unpin call in flight (per-row disable).
+  const [pinning, setPinning] = React.useState<string | null>(null);
 
   const deleteMut = useMutation(trpc.admin.room.delete.mutationOptions());
+  const seedMut = useMutation(trpc.admin.room.seedDefaults.mutationOptions());
+  const updateMut = useMutation(trpc.admin.room.update.mutationOptions());
+
+  const invalidateRooms = React.useCallback(
+    () => queryClient.invalidateQueries({ queryKey: [['admin', 'room', 'list']] }),
+    [queryClient],
+  );
 
   async function handleDelete() {
     if (!deleteId) return;
     setDeleting(true);
     try {
       await deleteMut.mutateAsync({ id: deleteId });
-      void queryClient.invalidateQueries({ queryKey: [['admin', 'room', 'list']] });
+      void invalidateRooms();
       toast.success('Room deleted');
       setDeleteId(null);
     } catch (err) {
@@ -518,19 +575,54 @@ function RoomsTab() {
     }
   }
 
+  async function handleSeed() {
+    setSeeding(true);
+    try {
+      const res = (await seedMut.mutateAsync()) as { created: string[]; skipped: string[] };
+      void invalidateRooms();
+      if (res.created.length > 0) {
+        toast.success(`Seeded: ${res.created.join(', ')}`);
+      } else {
+        toast.info('Starter rooms already exist - nothing seeded.');
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Seeding failed');
+    } finally {
+      setSeeding(false);
+    }
+  }
+
+  async function handleTogglePin(room: AdminRoom) {
+    setPinning(room.id);
+    try {
+      await updateMut.mutateAsync({ id: room.id, pinned: !room.pinned });
+      void invalidateRooms();
+      toast.success(room.pinned ? 'Room unpinned' : 'Room pinned');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Pin toggle failed');
+    } finally {
+      setPinning(null);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-base font-semibold">Rooms</h2>
-        <Button
-          size="sm"
-          onClick={() => {
-            setEditRoom(null);
-            setDialogOpen(true);
-          }}
-        >
-          + Create room
-        </Button>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" disabled={seeding} onClick={() => void handleSeed()}>
+            {seeding ? 'Seeding...' : 'Seed starter rooms'}
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => {
+              setEditRoom(null);
+              setDialogOpen(true);
+            }}
+          >
+            + Create room
+          </Button>
+        </div>
       </div>
 
       {roomsQ.isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
@@ -550,6 +642,7 @@ function RoomsTab() {
               <TableHead>Encryption</TableHead>
               <TableHead>Members</TableHead>
               <TableHead>Messages</TableHead>
+              <TableHead>Pinned</TableHead>
               <TableHead></TableHead>
             </TableRow>
           </TableHeader>
@@ -562,8 +655,20 @@ function RoomsTab() {
                 <TableCell className="text-xs">{room.encryption}</TableCell>
                 <TableCell className="text-xs">{room._count.memberships}</TableCell>
                 <TableCell className="text-xs">{room._count.messages}</TableCell>
+                <TableCell className="text-xs">
+                  {room.pinned ? <Badge variant="secondary">pinned</Badge> : '-'}
+                </TableCell>
                 <TableCell>
                   <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs"
+                      disabled={pinning === room.id}
+                      onClick={() => void handleTogglePin(room)}
+                    >
+                      {pinning === room.id ? '...' : room.pinned ? 'Unpin' : 'Pin'}
+                    </Button>
                     <Button
                       size="sm"
                       variant="outline"
@@ -626,6 +731,7 @@ function RoomsTab() {
 
 function BansTab() {
   const trpc = useTRPC();
+  const queryClient = useQueryClient();
   const roomsQ = useQuery(trpc.admin.room.list.queryOptions());
   const rooms = asAdminRooms(roomsQ.data ?? []);
 
@@ -633,6 +739,16 @@ function BansTab() {
   const [icValue, setIcValue] = React.useState('');
   const [jnValue, setJnValue] = React.useState('');
   const [unbanJn, setUnbanJn] = React.useState('');
+
+  const bansQ = useQuery({
+    ...trpc.admin.bans.queryOptions({ roomId: selectedRoom }),
+    enabled: !!selectedRoom,
+  });
+  const bans = asBanRows(bansQ.data ?? []);
+  const invalidateBans = React.useCallback(
+    () => queryClient.invalidateQueries({ queryKey: [['admin', 'bans']] }),
+    [queryClient],
+  );
 
   const banIc = useAdminMutation(
     trpc.admin.banByIdentityCommitment.mutationOptions(),
@@ -651,6 +767,7 @@ function BansTab() {
     if (!selectedRoom || !icValue.trim()) return;
     if (await banIc.run({ roomId: selectedRoom, identityCommitment: icValue.trim() })) {
       setIcValue('');
+      void invalidateBans();
     }
   }
 
@@ -658,13 +775,16 @@ function BansTab() {
     if (!selectedRoom || !jnValue.trim()) return;
     if (await banJn.run({ roomId: selectedRoom, joinNullifier: jnValue.trim() })) {
       setJnValue('');
+      void invalidateBans();
     }
   }
 
-  async function handleUnban() {
-    if (!selectedRoom || !unbanJn.trim()) return;
-    if (await unban.run({ roomId: selectedRoom, joinNullifier: unbanJn.trim() })) {
-      setUnbanJn('');
+  async function handleUnban(joinNullifier?: string) {
+    const jn = (joinNullifier ?? unbanJn).trim();
+    if (!selectedRoom || !jn) return;
+    if (await unban.run({ roomId: selectedRoom, joinNullifier: jn })) {
+      if (!joinNullifier) setUnbanJn('');
+      void invalidateBans();
     }
   }
 
@@ -687,6 +807,60 @@ function BansTab() {
           </SelectContent>
         </Select>
       </div>
+
+      {selectedRoom ? (
+        <section className="space-y-2 rounded border border-border p-4">
+          <h3 className="text-sm font-semibold">Active bans</h3>
+          {bansQ.isError && <p className="text-xs text-destructive">{bansQ.error.message}</p>}
+          {!bansQ.isError && bans.length === 0 && !bansQ.isLoading && (
+            <p className="text-xs text-muted-foreground">No bans in this room.</p>
+          )}
+          {bans.length > 0 && (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>When</TableHead>
+                  <TableHead>Reason</TableHead>
+                  <TableHead>Join nullifier</TableHead>
+                  <TableHead></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {bans.map((ban) => (
+                  <TableRow key={ban.id}>
+                    <TableCell className="whitespace-nowrap text-xs">
+                      {new Date(ban.createdAt).toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      <Badge
+                        variant={ban.reason === 'RATE_LIMIT_COLLISION' ? 'destructive' : 'secondary'}
+                      >
+                        {ban.reason === 'RATE_LIMIT_COLLISION' ? 'rate-limit' : 'operator'}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="max-w-[220px] truncate font-mono text-xs text-muted-foreground">
+                      {ban.joinNullifier ?? '-'}
+                    </TableCell>
+                    <TableCell>
+                      {ban.joinNullifier ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-xs"
+                          disabled={busyUnban}
+                          onClick={() => void handleUnban(ban.joinNullifier ?? undefined)}
+                        >
+                          Unban
+                        </Button>
+                      ) : null}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </section>
+      ) : null}
 
       <section className="space-y-2 rounded border border-border p-4">
         <h3 className="text-sm font-semibold">Ban by identity commitment</h3>
@@ -833,15 +1007,9 @@ function MembersTab() {
             <div key={m.joinNullifier} className="rounded border border-border p-4">
               <div className="mb-2 flex items-start justify-between gap-3">
                 <div>
-                  <span
-                    className={`inline-block rounded px-1.5 py-0.5 text-xs font-semibold ${
-                      m.status === 'BANNED'
-                        ? 'bg-destructive/20 text-destructive'
-                        : 'bg-green-100 text-green-700'
-                    }`}
-                  >
+                  <Badge variant={m.status === 'BANNED' ? 'destructive' : 'success'}>
                     {m.status}
-                  </span>
+                  </Badge>
                   <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
                     jn: {m.joinNullifier}
                   </p>
@@ -1103,8 +1271,10 @@ function BroadcastTab() {
 function AdminDashboard() {
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-8 md:py-10">
-      <header className="mb-8">
+      <header className="mb-8 flex flex-wrap items-start justify-between gap-4">
         <h1 className="text-2xl font-bold tracking-tight">Admin dashboard</h1>
+        {/* The operator's own sub: the value DISCREETLY_OPERATOR_SUBS holds. */}
+        <MinisterSub className="max-w-sm" />
       </header>
 
       <Tabs defaultValue="rooms">

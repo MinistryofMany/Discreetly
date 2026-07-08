@@ -4,7 +4,7 @@ import { applyWSSHandler } from '@trpc/server/adapters/ws';
 import { WebSocketServer } from 'ws';
 import { appRouter } from './trpc/app.router.js';
 import { getProductionVerifier } from './minister/production-verifier.js';
-import { getConfig } from './config.js';
+import { getConfig, parseOperatorSubs } from './config.js';
 import { logger } from './log.js';
 import { checkRateLimit } from './middleware/rate-limit.js';
 import { liveness, readiness } from './health.js';
@@ -17,6 +17,7 @@ export type {
   AdminLeaf,
   AdminMembership,
   AuditLogRow,
+  BanRow,
   MessageListItem,
 } from './trpc/outputs.js';
 export type {
@@ -31,6 +32,18 @@ export { MAX_ROOM_MESSAGES } from './messaging/history.js';
 const config = getConfig();
 const { API_PORT, RATE_LIMIT_WINDOW_MS, RATE_LIMIT_MAX, RATE_LIMIT_MUTATION_MAX, TRUST_PROXY } =
   config;
+
+// Operator allowlist for admin procedures, parsed once at boot. An empty set
+// means no operator exists (fail closed) - warn loudly so a misconfigured
+// deployment is diagnosable from the boot log instead of a silent FORBIDDEN.
+const operatorSubs = parseOperatorSubs(config.DISCREETLY_OPERATOR_SUBS);
+if (operatorSubs.size === 0) {
+  logger.warn(
+    'DISCREETLY_OPERATOR_SUBS is unset or empty: no operator is configured and every admin call will be FORBIDDEN. Set it to a comma-separated list of Minister pairwise subs.',
+  );
+} else {
+  logger.info({ operators: operatorSubs.size }, 'operator allowlist loaded');
+}
 
 /**
  * Browser origins allowed for both WS connections and HTTP CORS. A request with
@@ -156,6 +169,7 @@ const httpServer = createHTTPServer({
   createContext: ({ req }) => ({
     verify: getProductionVerifier(),
     adminIdToken: bearer(req.headers.authorization),
+    operatorSubs,
   }),
 });
 
@@ -195,7 +209,9 @@ wss.on('connection', (socket, req) => {
 applyWSSHandler({
   wss,
   router: appRouter,
-  createContext: () => ({ verify: getProductionVerifier() }),
+  // No Authorization header rides the WS upgrade from browsers, so admin
+  // procedures are HTTP-only; operatorSubs is still threaded for completeness.
+  createContext: () => ({ verify: getProductionVerifier(), operatorSubs }),
 });
 
 httpServer.listen(API_PORT);

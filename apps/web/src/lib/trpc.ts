@@ -1,5 +1,6 @@
 'use client';
 
+import { useSyncExternalStore } from 'react';
 import {
   createTRPCClient,
   createWSClient,
@@ -30,10 +31,59 @@ const API_WS_URL =
 // handshake. We supply our own retry policy with a monotonic failure counter that
 // only resets after a connection has stayed open long enough to be considered
 // healthy, so a flapping socket keeps escalating instead of resetting.
+//
+// Two further protections:
+// - LAZY mode: the socket dials only while a subscription is live, so pages that
+//   open no feed (e.g. /admin) generate ZERO WebSocket traffic and can never
+//   storm the endpoint, whatever their auth state.
+// - A max-attempt cap that closes the client and flips a TERMINAL "exhausted"
+//   state the UI can observe (useWsExhausted) to render "disconnected -
+//   Reconnect"; `retryWsRealtime()` re-arms the budget for a manual retry.
 const WS_RECONNECT_MIN_MS = 1_000; // floor for the first retry
 const WS_RECONNECT_MAX_MS = 30_000; // ceiling on the reconnect interval
 const WS_MAX_RECONNECT_ATTEMPTS = 10; // give up (stop the storm) after this many
 const WS_STABLE_CONNECTION_MS = 10_000; // "healthy" once open this long → reset count
+const WS_LAZY_CLOSE_MS = 30_000; // idle grace before a subscription-less socket closes
+
+// --- Terminal "exhausted" state (module-level so UI anywhere can observe) ----
+let wsExhausted = false;
+const wsExhaustedListeners = new Set<() => void>();
+/** Reset hook installed by the active WS client; re-arms its failure budget. */
+let resetWsFailureCount: (() => void) | null = null;
+
+function setWsExhausted(value: boolean): void {
+  if (wsExhausted === value) return;
+  wsExhausted = value;
+  for (const listener of wsExhaustedListeners) listener();
+}
+
+function subscribeWsExhausted(listener: () => void): () => void {
+  wsExhaustedListeners.add(listener);
+  return () => wsExhaustedListeners.delete(listener);
+}
+
+const getWsExhausted = (): boolean => wsExhausted;
+// SSR snapshot: never exhausted on the server.
+const getWsExhaustedServer = (): boolean => false;
+
+/**
+ * True once the realtime WS client has burned through its reconnect budget and
+ * stopped dialing (terminal "disconnected" state). Pair with
+ * `retryWsRealtime()` + a subscription reset for a manual "Reconnect" control.
+ */
+export function useWsExhausted(): boolean {
+  return useSyncExternalStore(subscribeWsExhausted, getWsExhausted, getWsExhaustedServer);
+}
+
+/**
+ * Re-arm the realtime reconnect budget after the terminal exhausted state.
+ * The caller must also restart its subscription (e.g. `sub.reset()`); the next
+ * request lazily reopens the socket.
+ */
+export function retryWsRealtime(): void {
+  resetWsFailureCount?.();
+  setWsExhausted(false);
+}
 
 /**
  * Create a tRPC WS client whose reconnects use exponential backoff with equal
@@ -56,8 +106,16 @@ function createBackoffWSClient(url: string) {
     }
   };
 
+  resetWsFailureCount = () => {
+    failureCount = 0;
+  };
+
   client = createWSClient({
     url,
+    // Connect only while a subscription needs the socket; close after an idle
+    // grace. Pages without a live feed never dial (and on failure, tRPC only
+    // reconnects a lazy socket while subscriptions are pending).
+    lazy: { enabled: true, closeMs: WS_LAZY_CLOSE_MS },
     // The library passes its own (unreliable) attemptIndex; we ignore it and use
     // our monotonic failureCount, which is incremented in onClose before this runs.
     retryDelayMs: () => {
@@ -73,6 +131,7 @@ function createBackoffWSClient(url: string) {
       clearStableTimer();
       stableTimer = setTimeout(() => {
         failureCount = 0;
+        setWsExhausted(false);
         stableTimer = null;
       }, WS_STABLE_CONNECTION_MS);
     },
@@ -80,10 +139,19 @@ function createBackoffWSClient(url: string) {
       clearStableTimer();
       failureCount += 1;
       if (failureCount >= WS_MAX_RECONNECT_ATTEMPTS) {
-        // Stop hammering a dead endpoint. This halts the reconnect loop; a page
-        // reload (or a new client) restarts it. Better a silent realtime outage
-        // than a request storm that gets the whole origin rate-limited.
-        client?.close();
+        // Stop hammering a dead endpoint: halt the reconnect loop and surface a
+        // TERMINAL disconnected state to the UI (useWsExhausted). A manual
+        // Reconnect (retryWsRealtime + subscription reset) or a page reload
+        // re-arms it. Better an explicit realtime outage than a request storm
+        // that gets the whole origin rate-limited.
+        setWsExhausted(true);
+        // close() completes in-flight subscriptions and stops reconnecting; a
+        // LATER request transparently reopens the socket (verified against
+        // @trpc/client's WsClient.batchSend), which is what Reconnect relies on.
+        client?.close().catch(() => {
+          // close() only rejects on request-teardown races; the socket is
+          // already down - nothing further to do.
+        });
       }
     },
   });

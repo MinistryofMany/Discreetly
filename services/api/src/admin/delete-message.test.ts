@@ -16,6 +16,7 @@ const mockVerifier = makeVerifier({
 
 const TS = Date.now();
 const ADMIN_SUB = `del-admin-${TS}`;
+const OPERATOR_SUBS: ReadonlySet<string> = new Set([ADMIN_SUB]);
 let roomId: string;
 
 const PROOF = {
@@ -23,7 +24,6 @@ const PROOF = {
 } as const;
 
 beforeAll(async () => {
-  await prisma.adminUser.create({ data: { pairwiseSub: ADMIN_SUB, label: 'del test admin' } });
   const room = await prisma.room.create({
     data: {
       name: 'Del Room',
@@ -41,7 +41,6 @@ afterAll(async () => {
   await prisma.auditLog.deleteMany({ where: { action: 'MESSAGE_DELETE', target: roomId } });
   await prisma.message.deleteMany({ where: { roomId } });
   await prisma.room.delete({ where: { id: roomId } });
-  await prisma.adminUser.deleteMany({ where: { pairwiseSub: ADMIN_SUB } });
   await prisma.$disconnect();
 });
 
@@ -154,7 +153,11 @@ describe('admin.deleteMessage (operator-only authz)', () => {
   it('valid non-operator token -> FORBIDDEN, row unchanged', async () => {
     const m = await seedMessage();
     const token = await signIdToken({ sub: `not-op-${TS}` });
-    const caller = appRouter.createCaller({ verify: mockVerifier, adminIdToken: token });
+    const caller = appRouter.createCaller({
+      verify: mockVerifier,
+      adminIdToken: token,
+      operatorSubs: OPERATOR_SUBS,
+    });
     await expect(caller.admin.deleteMessage({ messageId: m.id })).rejects.toMatchObject({
       code: 'FORBIDDEN',
     });
@@ -165,7 +168,11 @@ describe('admin.deleteMessage (operator-only authz)', () => {
 
   it('unknown message id (operator) -> NOT_FOUND', async () => {
     const token = await signIdToken({ sub: ADMIN_SUB });
-    const caller = appRouter.createCaller({ verify: mockVerifier, adminIdToken: token });
+    const caller = appRouter.createCaller({
+      verify: mockVerifier,
+      adminIdToken: token,
+      operatorSubs: OPERATOR_SUBS,
+    });
     await expect(
       caller.admin.deleteMessage({ messageId: 'nope' }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
@@ -174,7 +181,11 @@ describe('admin.deleteMessage (operator-only authz)', () => {
   it('operator token -> tombstones and reports the operator marker via message.list', async () => {
     const m = await seedMessage('to be removed');
     const token = await signIdToken({ sub: ADMIN_SUB });
-    const caller = appRouter.createCaller({ verify: mockVerifier, adminIdToken: token });
+    const caller = appRouter.createCaller({
+      verify: mockVerifier,
+      adminIdToken: token,
+      operatorSubs: OPERATOR_SUBS,
+    });
     const res = await caller.admin.deleteMessage({ messageId: m.id });
     expect(res).toEqual({ ok: true, alreadyDeleted: false });
 

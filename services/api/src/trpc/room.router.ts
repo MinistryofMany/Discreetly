@@ -20,7 +20,8 @@ export const roomRouter = router({
   listPublic: publicProcedure.query(async () =>
     prisma.room.findMany({
       where: { visibility: 'PUBLIC' },
-      orderBy: { createdAt: 'desc' },
+      // Operator-pinned rooms first (seeded/starter rooms), then newest.
+      orderBy: [{ pinned: 'desc' }, { createdAt: 'desc' }],
       select: PUBLIC_ROOM_FIELDS,
     }),
   ),

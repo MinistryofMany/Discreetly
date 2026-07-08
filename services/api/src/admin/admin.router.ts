@@ -17,6 +17,94 @@ import { publishSystem, publishTombstone } from '../realtime/broadcast.js';
 /** Minimum length for an AES room password, enforced server-side. */
 const AES_MIN_PASSWORD_LENGTH = 12;
 
+interface CreateRoomData {
+  name: string;
+  slug: string;
+  description?: string;
+  rateLimit: number;
+  userMessageLimit: number;
+  maxDevices?: number;
+  visibility?: 'PUBLIC' | 'PRIVATE';
+  persistence?: 'PERSISTENT' | 'EPHEMERAL';
+  encryption?: 'PLAINTEXT' | 'AES';
+  passwordHash?: string;
+  pinned?: boolean;
+  accessPolicy: Prisma.InputJsonValue;
+}
+
+/**
+ * Create a room, generating the rlnIdentifier with retry on unique collision
+ * (P2002 on rlnIdentifier only). A slug collision is a client error, not
+ * retryable, and surfaces as BAD_REQUEST. Shared by `room.create` and
+ * `room.seedDefaults`.
+ */
+async function createRoomRow(input: CreateRoomData) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const rlnIdentifier = generateRlnIdentifier(input.name);
+    try {
+      return await prisma.room.create({
+        data: {
+          name: input.name,
+          slug: input.slug,
+          description: input.description,
+          rlnIdentifier,
+          rateLimit: input.rateLimit,
+          userMessageLimit: input.userMessageLimit,
+          ...(input.maxDevices !== undefined && { maxDevices: input.maxDevices }),
+          ...(input.visibility !== undefined && { visibility: input.visibility }),
+          ...(input.persistence !== undefined && { persistence: input.persistence }),
+          ...(input.encryption !== undefined && { encryption: input.encryption }),
+          ...(input.passwordHash !== undefined && { passwordHash: input.passwordHash }),
+          ...(input.pinned !== undefined && { pinned: input.pinned }),
+          accessPolicy: input.accessPolicy,
+        },
+        select: PUBLIC_ROOM_FIELDS,
+      });
+    } catch (err: unknown) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        const target = err.meta?.target;
+        const fields = Array.isArray(target) ? target : target ? [String(target)] : [];
+        if (fields.includes('slug')) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'slug already in use' });
+        }
+        // rlnIdentifier collision: retry with a fresh identifier.
+        if (attempt < 4) continue;
+      }
+      throw err;
+    }
+  }
+  throw new TRPCError({
+    code: 'INTERNAL_SERVER_ERROR',
+    message: 'failed to generate unique rlnIdentifier',
+  });
+}
+
+/**
+ * Starter rooms so a fresh deployment is not empty. All PUBLIC, PERSISTENT,
+ * open-policy; the Lobby is pinned to the top of the public listing. Rate
+ * shape: up to 5 messages per 10s epoch.
+ */
+const STARTER_ROOMS = [
+  {
+    name: 'Lobby',
+    slug: 'lobby',
+    description: 'The town square. Say hello - anonymously.',
+    pinned: true,
+  },
+  {
+    name: 'Introductions',
+    slug: 'introductions',
+    description: 'Introduce your anonymous self.',
+    pinned: false,
+  },
+  {
+    name: 'Random',
+    slug: 'random',
+    description: 'Off-topic chatter.',
+    pinned: false,
+  },
+] as const;
+
 const roomAdminRouter = router({
   create: adminProcedure
     .input(
@@ -31,6 +119,7 @@ const roomAdminRouter = router({
         persistence: z.enum(['PERSISTENT', 'EPHEMERAL']).optional(),
         encryption: z.enum(['PLAINTEXT', 'AES']).optional(),
         password: z.string().max(512).optional(),
+        pinned: z.boolean().optional(),
         accessPolicy: z.unknown(),
       }),
     )
@@ -52,56 +141,70 @@ const roomAdminRouter = router({
 
       const passwordHash = input.password ? await hashRoomPassword(input.password) : undefined;
 
-      // Generate rlnIdentifier with retry on unique collision (P2002 on rlnIdentifier
-      // only). A slug collision is a client error, not retryable.
-      let room;
-      for (let attempt = 0; attempt < 5; attempt++) {
-        const rlnIdentifier = generateRlnIdentifier(input.name);
-        try {
-          room = await prisma.room.create({
-            data: {
-              name: input.name,
-              slug: input.slug,
-              description: input.description,
-              rlnIdentifier,
-              rateLimit: input.rateLimit,
-              userMessageLimit: input.userMessageLimit,
-              ...(input.maxDevices !== undefined && { maxDevices: input.maxDevices }),
-              ...(input.visibility !== undefined && { visibility: input.visibility }),
-              ...(input.persistence !== undefined && { persistence: input.persistence }),
-              ...(input.encryption !== undefined && { encryption: input.encryption }),
-              ...(passwordHash !== undefined && { passwordHash }),
-              accessPolicy: policyToJson(parsedPolicy),
-            },
-            select: PUBLIC_ROOM_FIELDS,
-          });
-          break;
-        } catch (err: unknown) {
-          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-            const target = err.meta?.target;
-            const fields = Array.isArray(target) ? target : target ? [String(target)] : [];
-            if (fields.includes('slug')) {
-              throw new TRPCError({ code: 'BAD_REQUEST', message: 'slug already in use' });
-            }
-            // rlnIdentifier collision: retry with a fresh identifier.
-            if (attempt < 4) continue;
-          }
-          throw err;
-        }
-      }
-
-      if (!room) {
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'failed to generate unique rlnIdentifier',
-        });
-      }
+      const room = await createRoomRow({
+        name: input.name,
+        slug: input.slug,
+        description: input.description,
+        rateLimit: input.rateLimit,
+        userMessageLimit: input.userMessageLimit,
+        maxDevices: input.maxDevices,
+        visibility: input.visibility,
+        persistence: input.persistence,
+        encryption: input.encryption,
+        passwordHash,
+        pinned: input.pinned,
+        accessPolicy: policyToJson(parsedPolicy),
+      });
 
       // Best-effort audit (outside the create transaction); the transactional
       // ban audits are the durable record. A failed audit here does not roll back.
       await audit({ actor: ctx.adminSub, action: 'ROOM_CREATE', target: room.id });
       return room;
     }),
+
+  /**
+   * Seed the starter PUBLIC rooms (idempotent: a room whose slug already
+   * exists is skipped), so a fresh deployment has somewhere to talk.
+   */
+  seedDefaults: adminProcedure.mutation(async ({ ctx }) => {
+    const created: string[] = [];
+    const skipped: string[] = [];
+    for (const starter of STARTER_ROOMS) {
+      const existing = await prisma.room.findUnique({
+        where: { slug: starter.slug },
+        select: { id: true },
+      });
+      if (existing) {
+        skipped.push(starter.slug);
+        continue;
+      }
+      try {
+        const room = await createRoomRow({
+          name: starter.name,
+          slug: starter.slug,
+          description: starter.description,
+          rateLimit: 10_000,
+          userMessageLimit: 5,
+          visibility: 'PUBLIC',
+          persistence: 'PERSISTENT',
+          encryption: 'PLAINTEXT',
+          pinned: starter.pinned,
+          accessPolicy: policyToJson(validatePolicyInput({ allOf: [] })),
+        });
+        await audit({ actor: ctx.adminSub, action: 'ROOM_SEED', target: room.id });
+        created.push(starter.slug);
+      } catch (err) {
+        // Lost a create race (slug taken between check and create): treat as
+        // skipped; anything else is a real failure.
+        if (err instanceof TRPCError && err.message === 'slug already in use') {
+          skipped.push(starter.slug);
+          continue;
+        }
+        throw err;
+      }
+    }
+    return { created, skipped };
+  }),
 
   update: adminProcedure
     .input(
@@ -117,6 +220,7 @@ const roomAdminRouter = router({
         persistence: z.enum(['PERSISTENT', 'EPHEMERAL']).optional(),
         encryption: z.enum(['PLAINTEXT', 'AES']).optional(),
         password: z.string().max(512).optional(),
+        pinned: z.boolean().optional(),
         accessPolicy: z.unknown().optional(),
       }),
     )
@@ -181,6 +285,7 @@ const roomAdminRouter = router({
           ...(input.persistence !== undefined && { persistence: input.persistence }),
           ...(input.encryption !== undefined && { encryption: input.encryption }),
           ...(passwordHash !== undefined && { passwordHash }),
+          ...(input.pinned !== undefined && { pinned: input.pinned }),
           ...(parsedPolicy !== undefined && { accessPolicy: policyToJson(parsedPolicy) }),
           // rlnIdentifier is intentionally excluded — never updated
         },
@@ -286,6 +391,73 @@ export const adminRouter = router({
     .mutation(async ({ input, ctx }) =>
       unban({ roomId: input.roomId, joinNullifier: input.joinNullifier, actor: ctx.adminSub }),
     ),
+
+  /**
+   * Ban the sender of a persisted message via its stored `senderMembershipId`
+   * author link (resolved at write time from the sender's random membership
+   * `authorToken`; see messaging/pipeline.ts). Neither the token nor the
+   * nullifier ever leaves the server here - the operator only supplies the
+   * messageId. Fails with BAD_REQUEST when the message carries no author link
+   * (pre-feature message, ephemeral relay, or a client that omitted the
+   * token); the Bans tab's raw-nullifier form remains the manual fallback.
+   */
+  banMessageAuthor: adminProcedure
+    .input(z.object({ messageId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const message = await prisma.message.findUnique({
+        where: { id: input.messageId },
+        select: { id: true, roomId: true, senderMembershipId: true },
+      });
+      if (!message) throw new TRPCError({ code: 'NOT_FOUND', message: 'message not found' });
+      if (!message.senderMembershipId) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message:
+            'message has no author link - the sender did not attach an author token. Ban manually from the Bans tab.',
+        });
+      }
+      // Resolve the linked membership's join nullifier so the ban reuses the
+      // canonical nullifier-keyed path (Ban row + audit + admin.bans/unban all
+      // key on it). A dangling link (membership row deleted; the FK nulls the
+      // column, but guard the race) fails closed as "no author link".
+      const membership = await prisma.membership.findUnique({
+        where: { id: message.senderMembershipId },
+        select: { joinNullifier: true },
+      });
+      if (!membership) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message:
+            'message author link no longer resolves to a membership. Ban manually from the Bans tab.',
+        });
+      }
+      const outcome = await banByJoinNullifier({
+        roomId: message.roomId,
+        joinNullifier: membership.joinNullifier,
+        actor: ctx.adminSub,
+      });
+      return { ok: true as const, prunedLeaves: outcome.prunedLeaves };
+    }),
+
+  /** Ban rows for a room (operator view). Excludes the recovered Shamir secret. */
+  bans: adminProcedure.input(z.object({ roomId: z.string() })).query(async ({ input }) => {
+    const room = await prisma.room.findUnique({
+      where: { id: input.roomId },
+      select: { id: true },
+    });
+    if (!room) throw new TRPCError({ code: 'NOT_FOUND', message: 'room not found' });
+    return prisma.ban.findMany({
+      where: { roomId: input.roomId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        joinNullifier: true,
+        rateCommitment: true,
+        reason: true,
+        createdAt: true,
+      },
+    });
+  }),
 
   // Operator-only emergency content moderation. Soft-deletes (tombstones) any
   // message: purges its content in place and renders it as "removed by

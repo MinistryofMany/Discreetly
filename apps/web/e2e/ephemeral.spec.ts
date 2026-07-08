@@ -3,21 +3,17 @@ import {
   signIn,
   createIdentity,
   resetData,
-  seedAdmin,
-  subFor,
   getPrisma,
   unique,
 } from './harness/helpers.js';
 
 const USER_EMAIL = 'ephemeral-user@example.com';
-const ADMIN_EMAIL = 'admin@example.com';
 
 // Browser RLN proving + WS round-trips are slow; give chat specs more headroom.
 test.setTimeout(180_000);
 
 test.beforeAll(async () => {
   await resetData();
-  await seedAdmin(subFor(ADMIN_EMAIL));
 });
 
 async function createEphemeralRoom(name: string, slug: string) {

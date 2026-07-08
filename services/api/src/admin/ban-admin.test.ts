@@ -22,13 +22,14 @@ const ADMIN_SUB = `ban-admin-${randomUUID()}`;
 let roomId: string;
 let rlnIdentifier: string;
 
+const OPERATOR_SUBS: ReadonlySet<string> = new Set([ADMIN_SUB]);
+
 async function adminCaller() {
   const adminIdToken = await signIdToken({ sub: ADMIN_SUB });
-  return appRouter.createCaller({ verify: mockVerifier, adminIdToken });
+  return appRouter.createCaller({ verify: mockVerifier, adminIdToken, operatorSubs: OPERATOR_SUBS });
 }
 
 beforeAll(async () => {
-  await prisma.adminUser.create({ data: { pairwiseSub: ADMIN_SUB, label: 'ban test admin' } });
   const room = await prisma.room.create({
     data: {
       name: 'Ban Test',
@@ -50,7 +51,6 @@ afterAll(async () => {
   await prisma.ban.deleteMany({ where: { roomId } });
   await prisma.auditLog.deleteMany({ where: { actor: ADMIN_SUB } });
   await prisma.room.delete({ where: { id: roomId } });
-  await prisma.adminUser.deleteMany({ where: { pairwiseSub: ADMIN_SUB } });
   await prisma.$disconnect();
 });
 

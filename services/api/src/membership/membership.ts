@@ -1,8 +1,22 @@
+import { randomBytes } from 'node:crypto';
 import { prisma, MembershipStatus, type Prisma, type Room } from '@discreetly/db';
 import { getRateCommitmentHash } from '@ministryofmany/rln';
 
 /** An interactive-transaction client (the `tx` passed to `prisma.$transaction`). */
 export type TxClient = Prisma.TransactionClient;
+
+/**
+ * Random, unguessable author-link secret for a membership (32 bytes -> 64 hex
+ * chars, unique-indexed). Returned only to the joiner by `membership.join`;
+ * the stock client attaches it on `message.send` so the pipeline can link the
+ * message to this membership for operator moderation (ban-author). Server-
+ * generated randomness is the whole point: the old link (the join nullifier)
+ * was deterministically derivable from a victim's pairwise sub plus the
+ * PUBLIC rlnIdentifier, so anyone could frame another member.
+ */
+function generateAuthorToken(): string {
+  return randomBytes(32).toString('hex');
+}
 
 export interface JoinArgs {
   room: Pick<Room, 'id' | 'rlnIdentifier' | 'userMessageLimit' | 'maxDevices'>;
@@ -17,7 +31,14 @@ export interface JoinArgs {
 }
 
 export type JoinResult =
-  | { ok: true; membershipId: string; leafId: string; rateCommitment: string }
+  | {
+      ok: true;
+      membershipId: string;
+      leafId: string;
+      rateCommitment: string;
+      /** The caller's own author-link secret for this room (see generateAuthorToken). */
+      authorToken: string;
+    }
   | { ok: false; reason: 'banned' | 'already-on-device' | 'device-limit' };
 
 function rateCommitmentFor(ic: string, limit: number): string {
@@ -30,7 +51,11 @@ export async function joinRoom(args: JoinArgs): Promise<JoinResult> {
   const run = async (tx: TxClient): Promise<JoinResult> => {
     const membership = await tx.membership.upsert({
       where: { roomId_joinNullifier: { roomId: args.room.id, joinNullifier: args.joinNullifier } },
-      create: { roomId: args.room.id, joinNullifier: args.joinNullifier },
+      create: {
+        roomId: args.room.id,
+        joinNullifier: args.joinNullifier,
+        authorToken: generateAuthorToken(),
+      },
       update: {},
     });
     if (membership.status === MembershipStatus.BANNED)
@@ -39,6 +64,26 @@ export async function joinRoom(args: JoinArgs): Promise<JoinResult> {
     // Serialize concurrent joins for the same membership so the device-limit
     // count-then-create below is race-free.
     await tx.$queryRaw`SELECT 1 FROM "Membership" WHERE id = ${membership.id} FOR UPDATE`;
+
+    // Issue the author-link secret lazily to token-less rows (created before
+    // the column existed, or seeded directly). Re-read under the row lock so
+    // two concurrent joins cannot both mint and silently clobber each other's
+    // token - the loser would hold a secret that no longer resolves.
+    let authorToken = membership.authorToken;
+    if (authorToken === null) {
+      const locked = await tx.membership.findUniqueOrThrow({
+        where: { id: membership.id },
+        select: { authorToken: true },
+      });
+      authorToken = locked.authorToken;
+      if (authorToken === null) {
+        authorToken = generateAuthorToken();
+        await tx.membership.update({
+          where: { id: membership.id },
+          data: { authorToken },
+        });
+      }
+    }
 
     const existing = await tx.membershipLeaf.findUnique({
       where: { roomId_rateCommitment: { roomId: args.room.id, rateCommitment } },
@@ -60,7 +105,13 @@ export async function joinRoom(args: JoinArgs): Promise<JoinResult> {
         deviceLabel: args.deviceLabel,
       },
     });
-    return { ok: true as const, membershipId: membership.id, leafId: leaf.id, rateCommitment };
+    return {
+      ok: true as const,
+      membershipId: membership.id,
+      leafId: leaf.id,
+      rateCommitment,
+      authorToken,
+    };
   };
   // Reuse the caller's transaction when given (to compose atomically with other
   // writes), otherwise open a fresh one. The leaf upsert+count must stay

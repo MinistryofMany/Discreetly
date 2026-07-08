@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, afterAll } from 'vitest';
 import { prisma } from '@discreetly/db';
 import { createLocalJWKSet } from 'jose';
 import { appRouter } from '../trpc/app.router.js';
@@ -24,21 +24,18 @@ const ADMIN_SUB = `room-admin-${randomUUID()}`;
 const uniqueSlug = (prefix: string): string => `${prefix}-${randomUUID()}`;
 const createdRoomIds: string[] = [];
 
+const OPERATOR_SUBS: ReadonlySet<string> = new Set([ADMIN_SUB]);
+
 async function adminCaller() {
   const adminIdToken = await signIdToken({ sub: ADMIN_SUB });
-  return appRouter.createCaller({ verify: mockVerifier, adminIdToken });
+  return appRouter.createCaller({ verify: mockVerifier, adminIdToken, operatorSubs: OPERATOR_SUBS });
 }
-
-beforeAll(async () => {
-  await prisma.adminUser.create({ data: { pairwiseSub: ADMIN_SUB, label: 'room crud admin' } });
-});
 
 afterAll(async () => {
   for (const id of createdRoomIds) {
     await prisma.room.deleteMany({ where: { id } });
   }
   await prisma.auditLog.deleteMany({ where: { actor: ADMIN_SUB } });
-  await prisma.adminUser.deleteMany({ where: { pairwiseSub: ADMIN_SUB } });
   await prisma.$disconnect();
 });
 
@@ -381,6 +378,57 @@ describe('admin room CRUD', () => {
     // Same value is a no-op and must be allowed even with members.
     const noop = await caller.admin.room.update({ id: created.id, userMessageLimit: 3 });
     expect(noop.userMessageLimit).toBe(3);
+  });
+
+  it('create + update round-trip the pinned flag; listPublic sorts pinned first', async () => {
+    const caller = await adminCaller();
+    const pinned = await caller.admin.room.create({
+      name: 'Pinned Room',
+      slug: uniqueSlug('pinned'),
+      rateLimit: 1000,
+      userMessageLimit: 3,
+      pinned: true,
+      accessPolicy: OPEN_POLICY,
+    });
+    createdRoomIds.push(pinned.id);
+    expect(pinned.pinned).toBe(true);
+
+    const unpinned = await caller.admin.room.update({ id: pinned.id, pinned: false });
+    expect(unpinned.pinned).toBe(false);
+
+    const repinned = await caller.admin.room.update({ id: pinned.id, pinned: true });
+    expect(repinned.pinned).toBe(true);
+
+    // Pinned rooms sort before unpinned in the public listing.
+    const listed = await caller.room.listPublic();
+    const firstUnpinned = listed.findIndex((r) => !r.pinned);
+    const lastPinned = listed.map((r) => r.pinned).lastIndexOf(true);
+    if (firstUnpinned !== -1 && lastPinned !== -1) {
+      expect(lastPinned).toBeLessThan(firstUnpinned);
+    }
+  });
+
+  it('seedDefaults creates the starter rooms once and skips them on re-run', async () => {
+    const caller = await adminCaller();
+    const first = await caller.admin.room.seedDefaults();
+    // Track for cleanup regardless of which run created them.
+    for (const slug of [...first.created, ...first.skipped]) {
+      const row = await prisma.room.findUnique({ where: { slug } });
+      if (row && !createdRoomIds.includes(row.id)) createdRoomIds.push(row.id);
+    }
+    // Everything either created now or already present (shared dev DB).
+    expect(first.created.length + first.skipped.length).toBe(3);
+
+    const lobby = await prisma.room.findUnique({ where: { slug: 'lobby' } });
+    expect(lobby).not.toBeNull();
+    expect(lobby!.visibility).toBe('PUBLIC');
+    expect(lobby!.pinned).toBe(true);
+    expect(lobby!.accessPolicy).toEqual({ allOf: [] });
+
+    // Idempotent: a second run creates nothing.
+    const second = await caller.admin.room.seedDefaults();
+    expect(second.created).toEqual([]);
+    expect(second.skipped.length).toBe(3);
   });
 });
 
