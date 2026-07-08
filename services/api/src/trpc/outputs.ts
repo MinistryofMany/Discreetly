@@ -45,5 +45,8 @@ export type AuditLogRow = Omit<Outputs['admin']['auditLog'][number], 'metadata'>
   metadata: unknown;
 };
 
+/** Row shape returned by `admin.bans` (never includes the Shamir secret). */
+export type BanRow = Outputs['admin']['bans'][number];
+
 /** A persisted message row returned by `message.list`. */
 export type MessageListItem = Outputs['message']['list'][number];

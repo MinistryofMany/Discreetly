@@ -82,14 +82,22 @@ export async function signIdToken(opts: {
   aud?: string;
   issuer?: string;
   nonce?: string;
+  /**
+   * Token lifetime relative to now, in seconds (default 600 = the 10m
+   * production shape). Pass a NEGATIVE value to mint an already-expired but
+   * otherwise valid token (for expiry-path tests).
+   */
+  expiresInSeconds?: number;
 }): Promise<string> {
   const minister_badges = await Promise.all((opts.badges ?? []).map((b) => signVc(opts.sub, b)));
+  const nowSec = Math.floor(Date.now() / 1000);
+  const expSec = nowSec + (opts.expiresInSeconds ?? 600);
   return new SignJWT({ nonce: opts.nonce ?? 'n', minister_badges })
     .setProtectedHeader({ alg: 'EdDSA', kid: KID, typ: 'JWT' })
     .setIssuer(opts.issuer ?? MOCK_ISSUER)
     .setSubject(opts.sub)
     .setAudience(opts.aud ?? MOCK_CLIENT_ID)
-    .setIssuedAt()
-    .setExpirationTime('10m')
+    .setIssuedAt(opts.expiresInSeconds !== undefined && opts.expiresInSeconds < 0 ? expSec - 600 : undefined)
+    .setExpirationTime(expSec)
     .sign(privateKey);
 }

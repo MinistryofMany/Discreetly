@@ -6,6 +6,7 @@ export type AuditAction =
   | 'ROOM_CREATE'
   | 'ROOM_UPDATE'
   | 'ROOM_DELETE'
+  | 'ROOM_SEED'
   | 'ADMIN_BAN_IC'
   | 'ADMIN_BAN_NULLIFIER'
   | 'ADMIN_UNBAN'

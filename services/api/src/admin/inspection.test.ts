@@ -23,16 +23,14 @@ const ADMIN_SUB = `inspection-admin-${randomUUID()}`;
 let roomId: string;
 let membershipJoinNullifier: string;
 
+const OPERATOR_SUBS: ReadonlySet<string> = new Set([ADMIN_SUB]);
+
 async function adminCaller() {
   const adminIdToken = await signIdToken({ sub: ADMIN_SUB });
-  return appRouter.createCaller({ verify: mockVerifier, adminIdToken });
+  return appRouter.createCaller({ verify: mockVerifier, adminIdToken, operatorSubs: OPERATOR_SUBS });
 }
 
 beforeAll(async () => {
-  await prisma.adminUser.create({
-    data: { pairwiseSub: ADMIN_SUB, label: 'inspection test admin' },
-  });
-
   const room = await prisma.room.create({
     data: {
       name: 'Inspection Test Room',
@@ -67,7 +65,6 @@ beforeAll(async () => {
 afterAll(async () => {
   await prisma.auditLog.deleteMany({ where: { actor: ADMIN_SUB } });
   await prisma.room.delete({ where: { id: roomId } });
-  await prisma.adminUser.deleteMany({ where: { pairwiseSub: ADMIN_SUB } });
   await prisma.$disconnect();
 });
 
