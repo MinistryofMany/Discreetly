@@ -163,7 +163,9 @@ test('private room read is gated: non-member is blocked', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Private room' })).toBeVisible({
     timeout: 30_000,
   });
-  await expect(page.getByText(/you must be a member to view it/i)).toBeVisible();
+  await expect(page.getByText(/only members can view it/i)).toBeVisible();
+  // The dead 'sign in and join' copy is gone; a Back control exists instead.
+  await expect(page.getByRole('link', { name: /back to rooms/i })).toBeVisible();
 });
 
 test('id_token never appears in a request URL (room reads use POST + header)', async ({

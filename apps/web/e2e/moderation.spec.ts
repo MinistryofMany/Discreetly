@@ -77,6 +77,15 @@ test('operator soft-deletes a message: it renders as a tombstone in place and th
 
   const stored = await db.message.findFirstOrThrow({ where: { roomId: room.id } });
 
+  // The stock client attached its recorded join nullifier and the pipeline
+  // validated it against the membership: the author link is persisted (this
+  // is what admin.banMessageAuthor resolves server-side).
+  expect(stored.senderJoinNullifier).not.toBeNull();
+  const authorMembership = await db.membership.findFirst({
+    where: { roomId: room.id, joinNullifier: stored.senderJoinNullifier! },
+  });
+  expect(authorMembership).not.toBeNull();
+
   // Operator removes the message via the in-feed control.
   await page.getByRole('button', { name: /remove message/i }).click();
 
