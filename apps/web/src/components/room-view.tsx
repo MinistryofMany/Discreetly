@@ -1,15 +1,17 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
 import { toast } from 'sonner';
 import { useSubscription, type TRPCSubscriptionStatus } from '@trpc/tanstack-react-query';
-import { useTRPC } from '@/lib/trpc';
+import { useTRPC, useWsExhausted, retryWsRealtime } from '@/lib/trpc';
 import { useIsAdmin } from '@/components/shell/use-is-admin';
 import { useIdentity } from '@/lib/identity-context';
 import { rateCommitmentFor } from '@/lib/rln';
-import type { PublicRoom } from '@/lib/room-types';
+import { computeEligibility } from '@/lib/badges';
+import { asPolicyNode, type PublicRoom } from '@/lib/room-types';
 import type { ChatBroadcast, FeedItem, RoomBroadcast } from '@/lib/broadcast-types';
 import { TOMBSTONE_MARKER } from '@/lib/broadcast-types';
 import { MessageFeed } from '@/components/message-feed';
@@ -206,12 +208,51 @@ export function RoomView({ roomId }: { roomId: string }) {
     [deleteMessageMut, appendBroadcast, roomId],
   );
 
+  // Operator-only: ban the author of a message. The server resolves the
+  // message's stored (client-asserted, membership-validated) join nullifier;
+  // the nullifier itself never reaches this client. Messages without a link
+  // (pre-feature, ephemeral, or a client that omitted it) fail with a clear
+  // error; the admin Bans tab's raw-nullifier form is the manual fallback.
+  const banAuthorMut = useMutation(trpc.admin.banMessageAuthor.mutationOptions());
+  const handleBanAuthor = React.useCallback(
+    (id: string) => {
+      banAuthorMut.mutate(
+        { messageId: id },
+        {
+          onSuccess: () => {
+            toast.success('Author banned from this room.');
+            void leavesQuery.refetch();
+          },
+          onError: (err) =>
+            toast.error(err instanceof Error ? err.message : 'Failed to ban author'),
+        },
+      );
+    },
+    [banAuthorMut, leavesQuery],
+  );
+
   // Membership: the user is joined iff their rateCommitment is in the leaf set.
   const joined = React.useMemo(() => {
     if (!identity || !room) return false;
     const rc = rateCommitmentFor(identity, BigInt(room.userMessageLimit)).toString();
     return leaves.includes(rc);
   }, [identity, room, leaves]);
+
+  // Whether the room's policy requires badge disclosure at all (drives the
+  // pre-unlock disclose CTA). requiredScopes depends only on the policy shape.
+  const gated = React.useMemo(() => {
+    if (!room) return false;
+    return computeEligibility(asPolicyNode(room.accessPolicy), []).requiredScopes.length > 0;
+  }, [room]);
+
+  // Per-room SDK disclosure flow (same entry the JoinPanel uses).
+  const signInForRoom = React.useCallback(() => {
+    window.location.href = `/api/room-auth/start?roomId=${encodeURIComponent(roomId)}`;
+  }, [roomId]);
+
+  // Terminal realtime state: the WS client stopped re-dialing after exhausting
+  // its reconnect budget (see lib/trpc.ts). Drives the Reconnect banner.
+  const wsExhausted = useWsExhausted();
 
   if (roomQuery.isLoading) {
     return (
@@ -233,10 +274,11 @@ export function RoomView({ roomId }: { roomId: string }) {
           {isAccess ? 'Private room' : 'Unable to load room'}
         </h2>
         <p className="text-sm text-muted-foreground">
-          {isAccess
-            ? 'This is a private room. You must be a member to view it. Sign in and join to gain access.'
-            : msg}
+          {isAccess ? 'This is a private room. Only members can view it.' : msg}
         </p>
+        <Button asChild variant="outline" className="mt-4">
+          <Link href="/">Back to rooms</Link>
+        </Button>
       </div>
     );
   }
@@ -254,7 +296,12 @@ export function RoomView({ roomId }: { roomId: string }) {
           {room.visibility === 'PRIVATE' ? (
             <Badge variant="outline">private</Badge>
           ) : null}
-          <ConnectionDot status={sub.status} />
+          {room.persistence === 'EPHEMERAL' ? (
+            <Badge variant="outline">ephemeral · no history</Badge>
+          ) : (
+            <Badge variant="outline">saved</Badge>
+          )}
+          <ConnectionDot status={sub.status} exhausted={wsExhausted} />
         </div>
         {room.description ? (
           <p className="text-sm text-muted-foreground">{room.description}</p>
@@ -272,12 +319,31 @@ export function RoomView({ roomId }: { roomId: string }) {
           items={items}
           aesKey={aesKey}
           loading={sub.status === 'connecting' || sub.status === 'idle'}
+          ephemeral={room.persistence === 'EPHEMERAL'}
           onDelete={isOperator ? handleDeleteMessage : undefined}
+          onBanAuthor={
+            isOperator && room.persistence === 'PERSISTENT' ? handleBanAuthor : undefined
+          }
         />
       </div>
 
       {!identity ? (
         <div className="mt-3 space-y-2">
+          {gated && !roomToken && !joined ? (
+            // P1.3: the per-room disclosure is a full-page OIDC redirect that
+            // drops the in-memory identity anyway, so run it BEFORE unlocking:
+            // disclose first (roomToken survives in sessionStorage), then
+            // unlock once on return - instead of unlock → redirect → unlock.
+            <div className="rounded-md border border-border bg-card p-3">
+              <p className="text-sm text-muted-foreground">
+                This room requires badge disclosure. Disclose first - then unlock your identity
+                once when you are back.
+              </p>
+              <Button className="mt-2" onClick={signInForRoom}>
+                Disclose badges for this room
+              </Button>
+            </div>
+          ) : null}
           <p className="text-sm text-muted-foreground">
             Unlock or create your identity to participate.
           </p>
@@ -315,10 +381,20 @@ export function RoomView({ roomId }: { roomId: string }) {
         </>
       )}
 
-      {sub.status === 'error' ? (
+      {sub.status === 'error' || wsExhausted ? (
         <div className="mt-2 flex items-center gap-2 text-xs text-destructive">
           <span>Live feed disconnected.</span>
-          <Button size="sm" variant="outline" onClick={() => sub.reset()}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              // Re-arm the WS reconnect budget (terminal after max attempts),
+              // then restart the subscription; the next request lazily
+              // re-dials the socket.
+              retryWsRealtime();
+              sub.reset();
+            }}
+          >
             Reconnect
           </Button>
         </div>
@@ -327,7 +403,13 @@ export function RoomView({ roomId }: { roomId: string }) {
   );
 }
 
-function ConnectionDot({ status }: { status: TRPCSubscriptionStatus }) {
+function ConnectionDot({
+  status,
+  exhausted,
+}: {
+  status: TRPCSubscriptionStatus;
+  exhausted: boolean;
+}) {
   // Exhaustive over the tRPC subscription status union. 'pending' is the
   // connected/live state in @trpc/tanstack-react-query (verified against its
   // TRPCSubscriptionPendingResult type), so it maps to the green "live" dot.
@@ -337,7 +419,8 @@ function ConnectionDot({ status }: { status: TRPCSubscriptionStatus }) {
     pending: { color: 'bg-emerald-500', label: 'live' },
     error: { color: 'bg-destructive', label: 'disconnected' },
   };
-  const s = map[status];
+  // Reconnect budget exhausted: terminal disconnected, whatever the sub says.
+  const s = exhausted ? map.error : map[status];
   return (
     <span className="ml-auto flex items-center gap-1.5 text-[11px] text-muted-foreground">
       <span className={`h-2 w-2 rounded-full ${s.color}`} />

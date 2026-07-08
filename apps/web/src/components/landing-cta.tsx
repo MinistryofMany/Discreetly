@@ -12,12 +12,19 @@ export function LandingCta() {
   return (
     <div className="mt-8 flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:items-center sm:justify-center">
       {status === 'authenticated' ? (
-        <Button asChild size="lg" className="min-w-[13rem]">
-          <Link href="/identity">
-            <Mask className="h-5 w-5" />
-            Manage identity
-          </Link>
-        </Button>
+        <>
+          {/* Signed in: the primary action is the rooms grid; identity
+              management is secondary. */}
+          <Button asChild size="lg" className="min-w-[13rem]">
+            <Link href="/#rooms">Browse rooms</Link>
+          </Button>
+          <Button asChild size="lg" variant="outline" className="min-w-[13rem]">
+            <Link href="/identity">
+              <Mask className="h-5 w-5" />
+              Manage identity
+            </Link>
+          </Button>
+        </>
       ) : (
         // Global sign-in: intentionally badge-free (provider default is
         // `['openid','profile']`). Per-room badge scopes are requested at join.

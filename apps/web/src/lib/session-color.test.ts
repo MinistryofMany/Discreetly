@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { getSessionColor, identiconDataUri } from './session-color';
+import { getSessionColor, identiconDataUri, sessionHandle } from './session-color';
 
 beforeEach(() => {
   sessionStorage.clear();
@@ -44,5 +44,19 @@ describe('identiconDataUri', () => {
   it('honors an explicit foreground color', () => {
     const uri = identiconDataUri('x', '#ff0000');
     expect(decodeURIComponent(uri)).toContain('#ff0000');
+  });
+});
+
+describe('sessionHandle', () => {
+  it('is deterministic and stable for the same seed', () => {
+    expect(sessionHandle('seed-1')).toBe(sessionHandle('seed-1'));
+  });
+
+  it('has the anon-xxxx shape (4 hex chars)', () => {
+    expect(sessionHandle('anything')).toMatch(/^anon-[0-9a-f]{4}$/);
+  });
+
+  it('differs across seeds (spot check)', () => {
+    expect(sessionHandle('seed-1')).not.toBe(sessionHandle('seed-2'));
   });
 });

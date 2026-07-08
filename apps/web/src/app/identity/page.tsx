@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { IdentityPanel } from '@/components/identity-panel';
+import { MinisterSub } from '@/components/minister-sub';
 import { Button } from '@/components/ui/button';
 
 export default function IdentityPage() {
@@ -17,6 +18,7 @@ export default function IdentityPage() {
         </Button>
       </header>
       <IdentityPanel />
+      <MinisterSub className="mt-6 rounded-md border bg-card p-4" />
       <p className="mt-6 text-xs text-muted-foreground">
         To use the same identity on another device, export a backup here and
         import it there. Per-room device rotation is available from each room.

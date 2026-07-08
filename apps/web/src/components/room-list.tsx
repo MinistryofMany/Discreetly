@@ -1,11 +1,12 @@
 'use client';
 
+import * as React from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { useSession } from 'next-auth/react';
 import { useTRPC } from '@/lib/trpc';
 import { computeEligibility } from '@/lib/badges';
 import { asPolicyNode, type PublicRoom } from '@/lib/room-types';
+import { listLocalMemberships } from '@/lib/local-membership';
 import {
   Card,
   CardContent,
@@ -17,9 +18,11 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 
 function RoomCard({ room }: { room: PublicRoom }) {
-  const { data: session } = useSession();
-  const badges = session?.ministerBadges ?? [];
-  const eligibility = computeEligibility(asPolicyNode(room.accessPolicy), badges);
+  // Access verdicts belong to the server gate at join time. The card only says
+  // whether the room is open or badge-gated; a client-side "you can join" from
+  // decoded session badges was wrong for the per-room disclosure flow, so it
+  // is intentionally gone.
+  const eligibility = computeEligibility(asPolicyNode(room.accessPolicy), []);
   const open = eligibility.requiredScopes.length === 0;
 
   return (
@@ -29,13 +32,17 @@ function RoomCard({ room }: { room: PublicRoom }) {
           <div className="flex items-start justify-between gap-3">
             <CardTitle className="text-lg">{room.name}</CardTitle>
             <div className="flex shrink-0 flex-wrap gap-1.5">
+              {room.pinned ? <Badge variant="secondary">pinned</Badge> : null}
               {room.encryption === 'AES' ? (
                 <Badge variant="secondary">encrypted</Badge>
               ) : null}
+              {room.persistence === 'EPHEMERAL' ? (
+                <Badge variant="outline">ephemeral · no history</Badge>
+              ) : (
+                <Badge variant="outline">saved</Badge>
+              )}
               {open ? (
                 <Badge variant="success">open</Badge>
-              ) : eligibility.satisfied ? (
-                <Badge variant="success">you can join</Badge>
               ) : (
                 <Badge variant="outline">badges required</Badge>
               )}
@@ -58,9 +65,28 @@ function RoomCard({ room }: { room: PublicRoom }) {
   );
 }
 
+function RoomGrid({ rooms }: { rooms: PublicRoom[] }) {
+  return (
+    <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {rooms.map((room) => (
+        <li key={room.id}>
+          <RoomCard room={room} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function RoomList() {
   const trpc = useTRPC();
   const rooms = useQuery(trpc.room.listPublic.queryOptions());
+
+  // Locally-recorded memberships (written on join). Read in an effect so SSR
+  // and the first client render agree (localStorage is browser-only).
+  const [joinedIds, setJoinedIds] = React.useState<ReadonlySet<string>>(new Set());
+  React.useEffect(() => {
+    setJoinedIds(new Set(listLocalMemberships().map((m) => m.roomId)));
+  }, []);
 
   if (rooms.isLoading) {
     return (
@@ -84,13 +110,32 @@ export function RoomList() {
     return <p className="text-sm text-muted-foreground">No public rooms yet.</p>;
   }
 
+  const all = rooms.data as unknown as PublicRoom[];
+  const joined = all.filter((r) => joinedIds.has(r.id));
+  const others = joined.length > 0 ? all.filter((r) => !joinedIds.has(r.id)) : all;
+
   return (
-    <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      {(rooms.data as unknown as PublicRoom[]).map((room) => (
-        <li key={room.id}>
-          <RoomCard room={room} />
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-8">
+      {joined.length > 0 ? (
+        <section>
+          <div className="mb-3 flex items-center gap-3">
+            <h3 className="text-sm font-semibold text-muted-foreground">Joined</h3>
+            <span className="h-px flex-1 bg-border" />
+          </div>
+          <RoomGrid rooms={joined} />
+        </section>
+      ) : null}
+      {others.length > 0 ? (
+        <section>
+          {joined.length > 0 ? (
+            <div className="mb-3 flex items-center gap-3">
+              <h3 className="text-sm font-semibold text-muted-foreground">All rooms</h3>
+              <span className="h-px flex-1 bg-border" />
+            </div>
+          ) : null}
+          <RoomGrid rooms={others} />
+        </section>
+      ) : null}
+    </div>
   );
 }

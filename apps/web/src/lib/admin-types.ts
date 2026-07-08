@@ -9,6 +9,7 @@ import type {
   AdminMembership,
   AdminLeaf,
   AuditLogRow,
+  BanRow,
 } from '@discreetly/api';
 
 export type {
@@ -16,6 +17,7 @@ export type {
   AdminMembership,
   AdminLeaf,
   AuditLogRow,
+  BanRow,
 } from '@discreetly/api';
 
 export type RoomVisibility = 'PUBLIC' | 'PRIVATE';
@@ -36,4 +38,9 @@ export function asAdminMemberships(data: unknown): AdminMembership[] {
 /** Cast an untyped tRPC result to AuditLogRow[]. */
 export function asAuditLogRows(data: unknown): AuditLogRow[] {
   return data as AuditLogRow[];
+}
+
+/** Cast an untyped tRPC result to BanRow[]. */
+export function asBanRows(data: unknown): BanRow[] {
+  return data as BanRow[];
 }

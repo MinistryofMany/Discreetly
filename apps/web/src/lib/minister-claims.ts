@@ -22,6 +22,22 @@ const EMPTY: MinisterDisplayClaims = {
  * base64url - this returns safe empties rather than throwing, so a bad token
  * degrades the display without breaking the session.
  */
+/**
+ * Decode (NOT verify) the `exp` claim of an id_token, in epoch seconds.
+ * Returns null when the token is absent, malformed, or has no numeric exp.
+ * Used only to short-circuit UI states (e.g. "admin session expired") before
+ * asking the API; the API's verification remains authoritative.
+ */
+export function idTokenExpiresAt(idToken: string | null): number | null {
+  if (!idToken) return null;
+  try {
+    const { exp } = decodeJwt(idToken);
+    return typeof exp === 'number' ? exp : null;
+  } catch {
+    return null;
+  }
+}
+
 export function decodeMinisterClaims(idToken: string | null): MinisterDisplayClaims {
   if (!idToken) return EMPTY;
   try {

@@ -7,6 +7,7 @@ import { useSession } from 'next-auth/react';
 import { useTRPC } from '@/lib/trpc';
 import { useIdentity } from '@/lib/identity-context';
 import { computeEligibility } from '@/lib/badges';
+import { recordLocalMembership } from '@/lib/local-membership';
 import { asPolicyNode, type PublicRoom } from '@/lib/room-types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -88,9 +89,12 @@ export function JoinPanel({
         idToken: idTokenForJoin,
         identityCommitment: identity.commitment.toString(),
         deviceLabel: deviceLabel.trim() || undefined,
-      })) as { ok: boolean; reason?: string };
+      })) as { ok: boolean; reason?: string; joinNullifier?: string };
 
       if (res.ok) {
+        // Local join record: powers the rooms-home "Joined" section and the
+        // composer's client-asserted author link (operator moderation).
+        if (res.joinNullifier) recordLocalMembership(room.id, res.joinNullifier);
         toast.success('Joined the room.');
         onJoined();
       } else {
@@ -164,7 +168,9 @@ export function JoinPanel({
         */}
         {!idTokenForJoin ? (
           // No usable token yet: run the SDK disclosure flow for this room.
-          <Button onClick={signInForRoom}>Sign in with Minister</Button>
+          // "Sign in with Minister" is reserved for the GLOBAL login; this is
+          // the per-room badge disclosure.
+          <Button onClick={signInForRoom}>Disclose badges for this room</Button>
         ) : (
           <>
             <div className="space-y-2">
@@ -178,14 +184,31 @@ export function JoinPanel({
               />
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button onClick={handleJoin} disabled={joining || !identity}>
-                {joining ? 'Joining...' : 'Join'}
-              </Button>
-              {eligibility.requiredScopes.length > 0 && !roomToken ? (
-                <Button variant="outline" onClick={signInForRoom}>
-                  Sign in to disclose badges
-                </Button>
-              ) : null}
+              {(() => {
+                // A gated room is only joinable once the badges are disclosed:
+                // either a fresh per-room token exists or the session badges
+                // already look sufficient. Until then the disclosure CTA is the
+                // primary action and Join is inert - the old layout put a
+                // always-denied Join first and users walked into policy-denied.
+                const gated = eligibility.requiredScopes.length > 0;
+                const canJoin = !gated || Boolean(roomToken) || eligibility.satisfied;
+                return (
+                  <>
+                    {gated && !roomToken ? (
+                      <Button variant={canJoin ? 'outline' : 'default'} onClick={signInForRoom}>
+                        Disclose badges for this room
+                      </Button>
+                    ) : null}
+                    <Button
+                      variant={canJoin ? 'default' : 'outline'}
+                      onClick={handleJoin}
+                      disabled={joining || !identity || !canJoin}
+                    >
+                      {joining ? 'Joining...' : 'Join'}
+                    </Button>
+                  </>
+                );
+              })()}
             </div>
             {!identity ? (
               <p className="text-xs text-amber-600">

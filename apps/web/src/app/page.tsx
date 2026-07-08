@@ -65,7 +65,7 @@ export default async function HomePage() {
         </section>
       ) : null}
 
-      <section className="mt-12">
+      <section id="rooms" className="mt-12 scroll-mt-20">
         <div className="mb-4 flex items-center gap-3">
           <h2 className="text-xl">Public rooms</h2>
           <span className="h-px flex-1 bg-border" />

@@ -50,6 +50,17 @@ function hashSeed(seed: string): number {
 }
 
 /**
+ * Short, stable per-session display handle derived from the same seed as the
+ * identicon (the message's sessionColor, falling back to its id), e.g.
+ * "anon-3f9a". Messages from one sender within an epoch share a sessionColor,
+ * so they share a handle - readable grouping without any cross-epoch
+ * linkability beyond what sessionColor already provides.
+ */
+export function sessionHandle(seed: string): string {
+  return `anon-${hashSeed(seed).toString(16).padStart(8, '0').slice(0, 4)}`;
+}
+
+/**
  * Generate a deterministic 5x5 mirrored identicon as an inline SVG data URI from
  * a seed (e.g. the message's sessionColor or a commitment). Pure + no deps so it
  * renders identically in tests and the browser.
