@@ -53,7 +53,7 @@ export async function disconnectPrisma(): Promise<void> {
   }
 }
 
-/** Remove all mutable rows so each spec file starts clean. Admins are reseeded. */
+/** Remove all mutable rows so each spec file starts clean. */
 export async function resetData(): Promise<void> {
   const db = getPrisma();
   // Order respects FKs (messages/leaves/bans -> memberships -> rooms).
@@ -64,7 +64,6 @@ export async function resetData(): Promise<void> {
     db.membership.deleteMany(),
     db.room.deleteMany(),
     db.auditLog.deleteMany(),
-    db.adminUser.deleteMany(),
     // Per-room SDK disclosure flow rows: clear in-flight/leftover flows so each
     // spec starts clean. There is NO durable badge store anymore (Path B).
     db.roomAuthFlow.deleteMany(),
@@ -83,11 +82,3 @@ export async function resetData(): Promise<void> {
   ]);
 }
 
-export async function seedAdmin(pairwiseSub: string, label = 'e2e-admin'): Promise<void> {
-  const db = getPrisma();
-  await db.adminUser.upsert({
-    where: { pairwiseSub },
-    update: { label },
-    create: { pairwiseSub, label },
-  });
-}

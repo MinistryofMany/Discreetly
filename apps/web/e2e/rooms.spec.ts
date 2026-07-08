@@ -62,17 +62,19 @@ test('badge-gated room: join blocked without the badge, succeeds after disclosin
     accessPolicy: { allOf: [{ badge: { type: 'email-domain' } }] },
   });
 
-  // --- Without the badge: join is policy-denied (each user a clean context) ---
+  // --- Without the badge: Join is inert (disabled) and the primary action is
+  // the per-room disclosure CTA, so a user can no longer walk into a
+  // policy-denied join. (Server-side deny stays covered by the API gate tests.)
   const noBadgeCtx = await browser.newContext();
   const noBadgePage = await noBadgeCtx.newPage();
   await signIn(noBadgePage, { email: 'nobadge@example.com', name: 'No Badge' });
   await createIdentity(noBadgePage, ID_PASSWORD);
   await noBadgePage.goto(`/rooms/${room.id}`);
   await unlockInRoom(noBadgePage);
-  await noBadgePage.getByRole('button', { name: /^join$/i }).click();
+  await expect(noBadgePage.getByRole('button', { name: /^join$/i })).toBeDisabled();
   await expect(
-    noBadgePage.getByText(/your disclosed badges do not satisfy this room/i),
-  ).toBeVisible({ timeout: 30_000 });
+    noBadgePage.getByRole('button', { name: /disclose badges for this room/i }),
+  ).toBeVisible();
   expect(await db.membershipLeaf.count({ where: { roomId: room.id } })).toBe(0);
   await noBadgeCtx.close();
 

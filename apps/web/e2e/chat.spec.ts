@@ -3,8 +3,6 @@ import {
   signIn,
   createIdentity,
   resetData,
-  seedAdmin,
-  subFor,
   getPrisma,
   unique,
 } from './harness/helpers.js';
@@ -18,7 +16,6 @@ test.setTimeout(180_000);
 
 test.beforeAll(async () => {
   await resetData();
-  await seedAdmin(subFor(ADMIN_EMAIL));
 });
 
 async function createRoom(opts: {

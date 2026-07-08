@@ -13,8 +13,9 @@ test.describe('identity panel', () => {
   test('create, lock, wrong-password reject, unlock', async ({ page }) => {
     await page.goto('/identity');
 
-    // Create.
-    await page.getByLabel('Password').fill(PASSWORD);
+    // Create (the panel requires a matching confirmation before minting).
+    await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
+    await page.getByLabel('Confirm password', { exact: true }).fill(PASSWORD);
     await page.getByRole('button', { name: /^create identity$/i }).click();
     await expect(page.getByText('Unlocked', { exact: true })).toBeVisible();
     await revealCommitment(page);
@@ -26,13 +27,13 @@ test.describe('identity panel', () => {
     await expect(page.getByText(/an encrypted identity is stored on this device/i)).toBeVisible();
 
     // Wrong password is rejected (sonner toast, stays locked).
-    await page.getByLabel('Password').fill('wrong-password');
+    await page.getByLabel('Password', { exact: true }).fill('wrong-password');
     await page.getByRole('button', { name: /^unlock$/i }).click();
     await expect(page.getByText(/incorrect password|wrong password/i)).toBeVisible();
     await expect(page.getByText('Unlocked', { exact: true })).toBeHidden();
 
     // Correct password unlocks and restores the same commitment.
-    await page.getByLabel('Password').fill(PASSWORD);
+    await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
     await page.getByRole('button', { name: /^unlock$/i }).click();
     await expect(page.getByText('Unlocked', { exact: true })).toBeVisible();
     await revealCommitment(page);
@@ -41,13 +42,14 @@ test.describe('identity panel', () => {
 
   test('export backup downloads, import restores, remove clears', async ({ page, context }) => {
     await page.goto('/identity');
-    await page.getByLabel('Password').fill(PASSWORD);
+    await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
+    await page.getByLabel('Confirm password', { exact: true }).fill(PASSWORD);
     await page.getByRole('button', { name: /^create identity$/i }).click();
     await expect(page.getByText('Unlocked', { exact: true })).toBeVisible();
     const commitment = await page.locator('text=commitment:').innerText();
 
     // Export -> a JSON download is produced; capture its bytes for re-import.
-    await page.getByLabel('Password').fill(PASSWORD);
+    await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
     const [download] = await Promise.all([
       page.waitForEvent('download'),
       page.getByRole('button', { name: /export backup/i }).click(),
@@ -58,13 +60,16 @@ test.describe('identity panel', () => {
     const backupJson = await fs.readFile(path, 'utf8');
     expect(JSON.parse(backupJson)).toHaveProperty('ciphertext');
 
-    // Remove from device (confirm dialog auto-accepted).
-    page.once('dialog', (d) => void d.accept());
+    // Remove from device (styled confirmation dialog, not a native confirm).
     await page.getByRole('button', { name: /remove from device/i }).click();
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: /^remove$/i })
+      .click();
     await expect(page.getByText(/no identity yet/i)).toBeVisible();
 
     // Import the backup file into a clean device.
-    await page.getByLabel('Password').fill(PASSWORD);
+    await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
     const fileChooserPromise = page.waitForEvent('filechooser');
     await page.getByRole('button', { name: /import backup/i }).click();
     const chooser = await fileChooserPromise;

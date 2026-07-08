@@ -1,5 +1,5 @@
 import { test, expect, type Locator } from '@playwright/test';
-import { signIn, resetData, seedAdmin, subFor, getPrisma, unique } from './harness/helpers.js';
+import { signIn, resetData, subFor, getPrisma, unique } from './harness/helpers.js';
 
 /** Fill the input whose containing div holds a <label> with the given text. */
 function fieldByLabel(scope: Locator, label: string): Locator {
@@ -9,15 +9,18 @@ function fieldByLabel(scope: Locator, label: string): Locator {
 const ADMIN_EMAIL = 'admin@example.com';
 const ADMIN_SUB = subFor(ADMIN_EMAIL);
 
+// The operator allowlist is boot-time env (DISCREETLY_OPERATOR_SUBS, set to
+// this admin's sub in harness/servers.ts) - nothing to seed in the DB.
 test.beforeAll(async () => {
   await resetData();
-  await seedAdmin(ADMIN_SUB);
 });
 
 test('non-admin is not authorized at /admin', async ({ page }) => {
   await signIn(page, { email: 'nobody@example.com', name: 'Nobody' });
   await page.goto('/admin');
-  await expect(page.getByText('Not authorized.')).toBeVisible();
+  await expect(page.getByText('not an operator', { exact: false })).toBeVisible();
+  // The gate surfaces the caller's own sub so an operator can allowlist it.
+  await expect(page.getByText(subFor('nobody@example.com'))).toBeVisible();
 });
 
 test('admin: create (open + custom policy), edit, delete room', async ({ page }) => {
