@@ -172,8 +172,8 @@ export function MessageComposer({
           <span>
             You appear as{' '}
             <span className="font-medium text-foreground">{sessionHandle(sessionSeed)}</span> in
-            this room. This name and icon are per browser session - they change when you refresh or
-            open a new tab.
+            this room. This name and icon stay the same while this tab is open (a page refresh
+            keeps them); open a new tab or session to get a fresh one.
           </span>
         </div>
       ) : null}
