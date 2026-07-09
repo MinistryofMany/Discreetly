@@ -519,6 +519,10 @@ function RoomDialog({ open, onClose, editRoom }: RoomDialogProps) {
                 required={!editRoom}
                 onChange={(e) => field('password', e.target.value)}
               />
+              <FieldHelp>
+                The password used to encrypt this room&apos;s messages. Share it only with
+                members you want to admit.
+              </FieldHelp>
             </div>
           )}
 
