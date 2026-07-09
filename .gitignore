@@ -54,6 +54,12 @@ dev-keys/
 # Archived pre-monorepo reference trees (kept on disk, not tracked). Safe to delete.
 _legacy/
 
+# Untracked scratch/working dirs, kept on disk but never swept into git add
+.cursorrules
+Prompt/
+RLN2DHCircuit/
+claude-workspace/
+
 # Internal workflow artifacts (not part of the published codebase)
 .claude/
 docs/superpowers/
