@@ -16,6 +16,7 @@ import {
   asAuditLogRows,
   asBanRows,
 } from '@/lib/admin-types';
+import { nameChangeUpdate } from '@/lib/admin-room-form';
 import {
   type PolicyBuilderNode,
   buildAndValidate,
@@ -174,18 +175,6 @@ function AdminGate({ children }: { children: React.ReactNode }) {
       <p className="text-sm text-muted-foreground">Reload the page to try again.</p>
     </>,
   );
-}
-
-/**
- * Derive a URL-safe slug from a room name: lowercase, non-alphanumeric runs
- * collapse to single hyphens, and leading/trailing hyphens are trimmed. Keeps
- * only `[a-z0-9-]`. The slug field is derived from the name, never typed.
- */
-function slugify(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
 }
 
 /** One-line plain-language help shown under a form field. No jargon. */
@@ -384,8 +373,7 @@ function RoomDialog({ open, onClose, editRoom }: RoomDialogProps) {
                 onChange={(e) =>
                   setForm((prev) => ({
                     ...prev,
-                    name: e.target.value,
-                    slug: slugify(e.target.value),
+                    ...nameChangeUpdate(prev.slug, e.target.value, !!editRoom),
                   }))
                 }
               />
@@ -397,10 +385,14 @@ function RoomDialog({ open, onClose, editRoom }: RoomDialogProps) {
                 required
                 readOnly
                 value={form.slug}
-                placeholder="fills in from the name"
+                placeholder={editRoom ? undefined : 'fills in from the name'}
                 className="bg-muted/50"
               />
-              <FieldHelp>The room&apos;s web address. Filled in from the name for you.</FieldHelp>
+              <FieldHelp>
+                {editRoom
+                  ? "The room's fixed web address. Renaming the room does not change it."
+                  : "The room's web address. Filled in from the name for you."}
+              </FieldHelp>
             </div>
           </div>
 
