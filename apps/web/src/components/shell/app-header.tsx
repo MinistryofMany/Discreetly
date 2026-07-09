@@ -42,7 +42,7 @@ export function AppHeader() {
 
       <div className="flex items-center gap-3">
         <span className="hidden font-display text-sm text-primary sm:inline">
-          Beta V3
+          Beta · {process.env.NEXT_PUBLIC_BUILD_DATE ?? 'dev'}
         </span>
         <AuthControl />
       </div>

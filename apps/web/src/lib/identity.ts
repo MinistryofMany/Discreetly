@@ -232,20 +232,63 @@ export function clear(): void {
   getStorage().removeItem(STORAGE_KEY);
 }
 
-/** Backup file format: the encrypted envelope plus the public commitment. */
-export interface IdentityBackup extends EncryptedIdentity {
-  readonly type: 'discreetly-identity-backup';
+const BACKUP_TYPE = 'discreetly-identity-backup';
+
+/** Password-encrypted backup: the encrypted envelope plus the public commitment. */
+export interface EncryptedIdentityBackup extends EncryptedIdentity {
+  readonly type: typeof BACKUP_TYPE;
+  /** Explicit for new backups; absent on legacy encrypted backups (treated as encrypted). */
+  readonly encrypted?: true;
   /** Public commitment, for operator reference. Decimal string. */
   readonly commitment: string;
+}
+
+/**
+ * Unencrypted backup: the canonical identity serialization in the clear. Anyone
+ * with this file can impersonate the holder, so it is only produced behind an
+ * explicit confirmation.
+ */
+export interface PlaintextIdentityBackup {
+  readonly type: typeof BACKUP_TYPE;
+  readonly encrypted: false;
+  /** Public commitment, for operator reference. Decimal string. */
+  readonly commitment: string;
+  /** Canonical Semaphore v3 serialization (`[trapdoor, nullifier]` hex), in the clear. */
+  readonly serialized: string;
+}
+
+export type IdentityBackup = EncryptedIdentityBackup | PlaintextIdentityBackup;
+
+/** True if a parsed backup is the unencrypted (plaintext) variant. */
+function isPlaintextBackup(backup: IdentityBackup): backup is PlaintextIdentityBackup {
+  return (backup as PlaintextIdentityBackup).encrypted === false;
 }
 
 /** Produce a downloadable, password-encrypted backup of `identity`. */
 export async function exportBackup(
   identity: AppIdentity,
   password: string,
-): Promise<IdentityBackup> {
+): Promise<EncryptedIdentityBackup> {
   const env = await encryptIdentity(identity, password);
-  return { ...env, type: 'discreetly-identity-backup', commitment: identity.commitment.toString() };
+  return {
+    ...env,
+    type: BACKUP_TYPE,
+    encrypted: true,
+    commitment: identity.commitment.toString(),
+  };
+}
+
+/**
+ * Produce a downloadable UNENCRYPTED backup of `identity`. The secret is written
+ * in the clear; callers MUST gate this behind an explicit user confirmation.
+ */
+export function exportPlaintextBackup(identity: AppIdentity): PlaintextIdentityBackup {
+  return {
+    type: BACKUP_TYPE,
+    encrypted: false,
+    commitment: identity.commitment.toString(),
+    serialized: identity.serialized,
+  };
 }
 
 /** Serialize a backup to a JSON Blob for download. */
@@ -253,10 +296,13 @@ export function backupToBlob(backup: IdentityBackup): Blob {
   return new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
 }
 
-/** Decrypt a backup (JSON string or object) with `password`. Does not persist. */
+/**
+ * Decrypt/parse a backup (JSON string or object). An unencrypted backup ignores
+ * `password`; an encrypted one requires it. Does not persist.
+ */
 export async function importBackup(
   json: string | IdentityBackup,
-  password: string,
+  password = '',
 ): Promise<AppIdentity> {
   let backup: IdentityBackup;
   if (typeof json === 'string') {
@@ -268,8 +314,24 @@ export async function importBackup(
   } else {
     backup = json;
   }
-  if (backup.type !== 'discreetly-identity-backup') {
+  if (backup.type !== BACKUP_TYPE) {
     throw new IdentityError('File is not a Discreetly identity backup.');
   }
+  if (isPlaintextBackup(backup)) {
+    if (typeof backup.serialized !== 'string' || backup.serialized.length === 0) {
+      throw new IdentityError('Unencrypted backup is missing its identity data.');
+    }
+    return fromSerialized(backup.serialized);
+  }
   return decryptIdentity(backup, password);
+}
+
+/** True if a parsed/JSON backup is the unencrypted variant (needs no password). */
+export function backupIsPlaintext(json: string): boolean {
+  try {
+    const parsed = JSON.parse(json) as Partial<PlaintextIdentityBackup>;
+    return parsed.type === BACKUP_TYPE && parsed.encrypted === false;
+  } catch {
+    return false;
+  }
 }

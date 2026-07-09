@@ -43,9 +43,16 @@ const securityHeaders = [
 // every workspace dependency.
 const monorepoRoot = join(__dirname, '..', '..');
 
+// Build-time constant surfaced in the UI (a subtle "Beta · <date>" label). Fixed
+// at build, so a deployed image reports the day it was built, not request time.
+const BUILD_DATE = new Date().toISOString().slice(0, 10);
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  env: {
+    NEXT_PUBLIC_BUILD_DATE: BUILD_DATE,
+  },
   // Emit a self-contained server (.next/standalone) for the Docker runner image.
   output: 'standalone',
   outputFileTracingRoot: monorepoRoot,

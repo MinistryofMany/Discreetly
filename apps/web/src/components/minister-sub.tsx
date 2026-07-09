@@ -21,7 +21,7 @@ export function MinisterSub({ className }: { className?: string }) {
     if (!sub) return;
     try {
       await navigator.clipboard.writeText(sub);
-      toast.success('Minister sub copied.');
+      toast.success('Ministry ID copied.');
     } catch {
       toast.error('Could not copy - select the value manually.');
     }
@@ -29,7 +29,7 @@ export function MinisterSub({ className }: { className?: string }) {
 
   return (
     <div className={className}>
-      <p className="text-xs text-muted-foreground">Your Minister sub (this app)</p>
+      <p className="text-xs text-muted-foreground">Your Ministry ID for this app</p>
       <div className="mt-1 flex items-start gap-2">
         <code className="break-all rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{sub}</code>
         <Button

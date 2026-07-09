@@ -156,7 +156,7 @@ function AdminGate({ children }: { children: React.ReactNode }) {
       <>
         <h2 className="text-base font-semibold">Not authorized</h2>
         <p className="text-sm text-muted-foreground">
-          This account is not an operator. To grant it access, add its Minister sub to the
+          This account is not an operator. To grant it access, add its Ministry ID to the
           API&apos;s <code className="font-mono text-xs">DISCREETLY_OPERATOR_SUBS</code>{' '}
           (comma-separated) and restart the API.
         </p>
