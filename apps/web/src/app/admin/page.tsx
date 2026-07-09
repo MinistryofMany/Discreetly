@@ -176,6 +176,23 @@ function AdminGate({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Derive a URL-safe slug from a room name: lowercase, non-alphanumeric runs
+ * collapse to single hyphens, and leading/trailing hyphens are trimmed. Keeps
+ * only `[a-z0-9-]`. The slug field is derived from the name, never typed.
+ */
+function slugify(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+/** One-line plain-language help shown under a form field. No jargon. */
+function FieldHelp({ children }: { children: React.ReactNode }) {
+  return <p className="mt-1 text-[11px] text-muted-foreground">{children}</p>;
+}
+
 // ---- Room form state ---------------------------------------------------------
 
 interface RoomFormState {
@@ -200,7 +217,7 @@ function makeDefaultRoomForm(): RoomFormState {
     description: '',
     rateLimit: '20',
     userMessageLimit: '100',
-    maxDevices: '3',
+    maxDevices: '5',
     visibility: 'PUBLIC',
     persistence: 'PERSISTENT',
     encryption: 'PLAINTEXT',
@@ -361,11 +378,29 @@ function RoomDialog({ open, onClose, editRoom }: RoomDialogProps) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="mb-1 block text-xs">Name</Label>
-              <Input required value={form.name} onChange={(e) => field('name', e.target.value)} />
+              <Input
+                required
+                value={form.name}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    name: e.target.value,
+                    slug: slugify(e.target.value),
+                  }))
+                }
+              />
+              <FieldHelp>A friendly title shown in the room list.</FieldHelp>
             </div>
             <div>
               <Label className="mb-1 block text-xs">Slug</Label>
-              <Input required value={form.slug} onChange={(e) => field('slug', e.target.value)} />
+              <Input
+                required
+                readOnly
+                value={form.slug}
+                placeholder="fills in from the name"
+                className="bg-muted/50"
+              />
+              <FieldHelp>The room&apos;s web address. Filled in from the name for you.</FieldHelp>
             </div>
           </div>
 
@@ -375,6 +410,7 @@ function RoomDialog({ open, onClose, editRoom }: RoomDialogProps) {
               value={form.description}
               onChange={(e) => field('description', e.target.value)}
             />
+            <FieldHelp>One line telling people what the room is for.</FieldHelp>
           </div>
 
           <div className="grid grid-cols-3 gap-3">
@@ -387,6 +423,11 @@ function RoomDialog({ open, onClose, editRoom }: RoomDialogProps) {
                 value={form.rateLimit}
                 onChange={(e) => field('rateLimit', e.target.value)}
               />
+              <FieldHelp>
+                Length of each sending window, in milliseconds (60000 = 60 seconds). With the
+                message limit, this is how fast a member may post - e.g. {form.userMessageLimit}{' '}
+                messages per {Math.max(1, Math.round(Number(form.rateLimit) / 1000) || 0)}s.
+              </FieldHelp>
             </div>
             <div>
               <Label className="mb-1 block text-xs">User message limit</Label>
@@ -397,6 +438,10 @@ function RoomDialog({ open, onClose, editRoom }: RoomDialogProps) {
                 value={form.userMessageLimit}
                 onChange={(e) => field('userMessageLimit', e.target.value)}
               />
+              <FieldHelp>
+                How many messages one member may send within each window. Going over it is treated
+                as spam and removes them from the room.
+              </FieldHelp>
             </div>
             <div>
               <Label className="mb-1 block text-xs">Max devices</Label>
@@ -407,6 +452,7 @@ function RoomDialog({ open, onClose, editRoom }: RoomDialogProps) {
                 value={form.maxDevices}
                 onChange={(e) => field('maxDevices', e.target.value)}
               />
+              <FieldHelp>How many devices one person may use to join this room at once.</FieldHelp>
             </div>
           </div>
 
@@ -425,6 +471,10 @@ function RoomDialog({ open, onClose, editRoom }: RoomDialogProps) {
                   <SelectItem value="PRIVATE">Private</SelectItem>
                 </SelectContent>
               </Select>
+              <FieldHelp>
+                Public rooms show up in the room list. Private rooms are only reachable with a
+                direct link.
+              </FieldHelp>
             </div>
             <div>
               <Label className="mb-1 block text-xs">Persistence</Label>
@@ -440,6 +490,10 @@ function RoomDialog({ open, onClose, editRoom }: RoomDialogProps) {
                   <SelectItem value="EPHEMERAL">Ephemeral</SelectItem>
                 </SelectContent>
               </Select>
+              <FieldHelp>
+                Persistent rooms keep their message history. Ephemeral rooms forget messages as
+                soon as they are delivered.
+              </FieldHelp>
             </div>
             <div>
               <Label className="mb-1 block text-xs">Encryption</Label>
@@ -455,6 +509,10 @@ function RoomDialog({ open, onClose, editRoom }: RoomDialogProps) {
                   <SelectItem value="AES">AES</SelectItem>
                 </SelectContent>
               </Select>
+              <FieldHelp>
+                Plaintext rooms are readable by the server. AES rooms are locked with a shared
+                password that only members know.
+              </FieldHelp>
             </div>
           </div>
 
@@ -487,6 +545,11 @@ function RoomDialog({ open, onClose, editRoom }: RoomDialogProps) {
                 {form.openPolicy ? 'Build custom policy' : 'Use open policy (admit all)'}
               </button>
             </div>
+
+            <FieldHelp>
+              Who is allowed to join. Leave it open for anyone signed in, or require one or more
+              Ministry ID badges (for example an invite code or a verified account).
+            </FieldHelp>
 
             {policyParseError && (
               <p className="mb-2 rounded border border-amber-500/50 bg-amber-500/10 p-2 text-xs text-amber-700">

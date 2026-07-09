@@ -4,8 +4,10 @@ import * as React from 'react';
 import { toast } from 'sonner';
 import { useIdentity } from '@/lib/identity-context';
 import {
+  backupIsPlaintext,
   backupToBlob,
   exportBackup,
+  exportPlaintextBackup,
   importBackup,
   WrongPasswordError,
   type AppIdentity,
@@ -101,8 +103,28 @@ export function IdentityPanel() {
 
   async function handleExport() {
     if (!identity) return;
+    // No password -> offer an UNENCRYPTED backup, but only behind an explicit
+    // confirmation. A non-empty password still produces an encrypted backup.
     if (password.length === 0) {
-      toast.error('Enter the password to encrypt the backup.');
+      const ok = window.confirm(
+        'You are about to download an UNENCRYPTED backup of your identity. Anyone with this file can impersonate you. Continue?',
+      );
+      if (!ok) return;
+      setBusy(true);
+      try {
+        const backup = exportPlaintextBackup(identity);
+        const url = URL.createObjectURL(backupToBlob(backup));
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `discreetly-identity-${shortCommitment(identity.commitment)}-UNENCRYPTED.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast.success('Unencrypted backup downloaded. Keep this file secret.');
+      } catch (e) {
+        toast.error(errMessage(e));
+      } finally {
+        setBusy(false);
+      }
       return;
     }
     setBusy(true);
@@ -115,7 +137,7 @@ export function IdentityPanel() {
       a.click();
       URL.revokeObjectURL(url);
       setPassword('');
-      toast.success('Backup downloaded.');
+      toast.success('Encrypted backup downloaded.');
     } catch (e) {
       toast.error(errMessage(e));
     } finally {
@@ -131,16 +153,23 @@ export function IdentityPanel() {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    if (password.length === 0) {
-      toast.error('Enter the backup password first, then choose the file.');
-      return;
-    }
     setBusy(true);
     try {
       const text = await file.text();
+      // A plaintext backup carries the secret in the clear and needs no password;
+      // only an encrypted backup requires one.
+      const plaintext = backupIsPlaintext(text);
+      if (!plaintext && password.length === 0) {
+        toast.error('This backup is encrypted. Enter its password first, then choose the file.');
+        return;
+      }
       const id = await importBackup(text, password);
       setImporting(id);
-      toast.success('Backup decrypted. Save it to this device to keep it.');
+      toast.success(
+        plaintext
+          ? 'Unencrypted backup loaded. Save it to this device to keep it.'
+          : 'Backup decrypted. Save it to this device to keep it.',
+      );
     } catch (e) {
       toast.error(errMessage(e));
     } finally {
@@ -306,6 +335,14 @@ export function IdentityPanel() {
             onChange={onImportFile}
           />
         </div>
+
+        {identity ? (
+          <p className="text-xs text-muted-foreground">
+            Export writes a backup file you can restore on another device. With a password it is
+            encrypted; leave the password blank to export an unencrypted file (you will be asked to
+            confirm first).
+          </p>
+        ) : null}
 
         <Dialog open={confirmRemoveOpen} onOpenChange={setConfirmRemoveOpen}>
           <DialogContent className="max-w-sm">

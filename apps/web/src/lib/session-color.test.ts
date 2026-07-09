@@ -52,8 +52,8 @@ describe('sessionHandle', () => {
     expect(sessionHandle('seed-1')).toBe(sessionHandle('seed-1'));
   });
 
-  it('has the anon-xxxx shape (4 hex chars)', () => {
-    expect(sessionHandle('anything')).toMatch(/^anon-[0-9a-f]{4}$/);
+  it('is a friendly PascalCase {Adjective}{Noun} name', () => {
+    expect(sessionHandle('anything')).toMatch(/^[A-Z][a-z]+[A-Z][a-z]+$/);
   });
 
   it('differs across seeds (spot check)', () => {

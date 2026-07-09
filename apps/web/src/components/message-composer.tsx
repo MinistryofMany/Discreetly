@@ -7,7 +7,7 @@ import { useTRPC } from '@/lib/trpc';
 import { useIdentity } from '@/lib/identity-context';
 import { currentEpoch, nextMessageId } from '@/lib/rln';
 import { encryptContent } from '@/lib/crypto-box';
-import { getSessionColor } from '@/lib/session-color';
+import { getSessionColor, identiconDataUri, sessionHandle } from '@/lib/session-color';
 import { getLocalMembership } from '@/lib/local-membership';
 import type { PublicRoom } from '@/lib/room-types';
 import { Button } from '@/components/ui/button';
@@ -58,6 +58,12 @@ export function MessageComposer({
   const { identity } = useIdentity();
   const [content, setContent] = React.useState('');
   const [sending, setSending] = React.useState(false);
+  // The session display identity (name + icon). Read after mount only: it lives
+  // in sessionStorage, so reading it during SSR would mismatch on hydration.
+  const [sessionSeed, setSessionSeed] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    setSessionSeed(getSessionColor());
+  }, []);
 
   const sendMutation = useMutation(trpc.message.send.mutationOptions());
 
@@ -155,6 +161,22 @@ export function MessageComposer({
 
   return (
     <div className="mt-3 space-y-2">
+      {sessionSeed ? (
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={identiconDataUri(sessionSeed, getSessionColor())}
+            alt=""
+            className="h-5 w-5 shrink-0 rounded-full border"
+          />
+          <span>
+            You appear as{' '}
+            <span className="font-medium text-foreground">{sessionHandle(sessionSeed)}</span> in
+            this room. This name and icon are per browser session - they change when you refresh or
+            open a new tab.
+          </span>
+        </div>
+      ) : null}
       <div className="flex items-end gap-2">
         <Textarea
           value={content}

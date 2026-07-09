@@ -6,12 +6,14 @@ import { getIdentityCommitmentFromSecret } from '@ministryofmany/rln/pure';
 import {
   STORAGE_KEY,
   WrongPasswordError,
+  backupIsPlaintext,
   backupToBlob,
   clear,
   createIdentity,
   decryptIdentity,
   encryptIdentity,
   exportBackup,
+  exportPlaintextBackup,
   hasStoredIdentity,
   importBackup,
   saveEncrypted,
@@ -159,5 +161,56 @@ describe('export -> import backup round-trip', () => {
     expect(blob.type).toBe('application/json');
     const text = await blob.text();
     expect(JSON.parse(text).type).toBe('discreetly-identity-backup');
+  });
+});
+
+describe('plaintext (unencrypted) backup round-trip', () => {
+  it('exportPlaintextBackup -> import restores the same identity without a password', async () => {
+    const id = createIdentity();
+    const backup = exportPlaintextBackup(id);
+    expect(backup.type).toBe('discreetly-identity-backup');
+    expect(backup.encrypted).toBe(false);
+    expect(backup.commitment).toBe(id.commitment.toString());
+    // The secret is in the clear: the serialization is present verbatim.
+    expect(backup.serialized).toBe(id.serialized);
+
+    // Import with NO password (both object and JSON-string forms).
+    const fromObject = await importBackup(backup);
+    expect(fromObject.secret).toBe(id.secret);
+    expect(fromObject.commitment).toBe(id.commitment);
+    expect(fromObject.serialized).toBe(id.serialized);
+
+    const fromJson = await importBackup(JSON.stringify(backup));
+    expect(fromJson.secret).toBe(id.secret);
+    expect(fromJson.commitment).toBe(id.commitment);
+  });
+
+  it('a plaintext backup ignores any password passed to import', async () => {
+    const id = createIdentity();
+    const backup = exportPlaintextBackup(id);
+    const imported = await importBackup(JSON.stringify(backup), 'ignored password');
+    expect(imported.commitment).toBe(id.commitment);
+  });
+
+  it('rejects a plaintext backup that is missing its identity data', async () => {
+    const bad = { type: 'discreetly-identity-backup', encrypted: false, commitment: '1' };
+    await expect(importBackup(JSON.stringify(bad))).rejects.toThrow(/missing its identity data/);
+  });
+});
+
+describe('backupIsPlaintext', () => {
+  it('is true for an unencrypted backup JSON', () => {
+    const backup = exportPlaintextBackup(createIdentity());
+    expect(backupIsPlaintext(JSON.stringify(backup))).toBe(true);
+  });
+
+  it('is false for an encrypted backup JSON', async () => {
+    const backup = await exportBackup(createIdentity(), PW);
+    expect(backupIsPlaintext(JSON.stringify(backup))).toBe(false);
+  });
+
+  it('is false for a non-backup file and for invalid JSON', () => {
+    expect(backupIsPlaintext(JSON.stringify({ foo: 'bar' }))).toBe(false);
+    expect(backupIsPlaintext('not json at all')).toBe(false);
   });
 });

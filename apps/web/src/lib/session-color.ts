@@ -49,45 +49,132 @@ function hashSeed(seed: string): number {
   return h >>> 0;
 }
 
+// Inline word lists for the friendly {Adjective}{Noun} display name. Kept small,
+// PascalCase, and dependency-free so the name is deterministic in tests and the
+// browser alike. ~40 of each -> ~1600 combinations.
+const ADJECTIVES = [
+  'Captain',
+  'Professor',
+  'Sneaky',
+  'Brave',
+  'Cosmic',
+  'Grumpy',
+  'Jolly',
+  'Mellow',
+  'Nimble',
+  'Plucky',
+  'Quiet',
+  'Rowdy',
+  'Silly',
+  'Turbo',
+  'Velvet',
+  'Wobbly',
+  'Zesty',
+  'Fuzzy',
+  'Gentle',
+  'Hasty',
+  'Icy',
+  'Lucky',
+  'Merry',
+  'Noble',
+  'Odd',
+  'Peppy',
+  'Rusty',
+  'Salty',
+  'Tiny',
+  'Witty',
+  'Amber',
+  'Breezy',
+  'Crimson',
+  'Dizzy',
+  'Electric',
+  'Feral',
+  'Golden',
+  'Humble',
+  'Jazzy',
+  'Kooky',
+];
+
+const NOUNS = [
+  'Cardboard',
+  'Shrimp',
+  'Cup',
+  'Otter',
+  'Comet',
+  'Waffle',
+  'Pickle',
+  'Badger',
+  'Lantern',
+  'Muffin',
+  'Narwhal',
+  'Pebble',
+  'Quokka',
+  'Raccoon',
+  'Sprocket',
+  'Turnip',
+  'Umbrella',
+  'Walrus',
+  'Yeti',
+  'Zeppelin',
+  'Acorn',
+  'Biscuit',
+  'Cactus',
+  'Doodle',
+  'Ferret',
+  'Gadget',
+  'Hedgehog',
+  'Iguana',
+  'Jellybean',
+  'Kettle',
+  'Llama',
+  'Mango',
+  'Noodle',
+  'Octopus',
+  'Penguin',
+  'Quill',
+  'Robot',
+  'Sparrow',
+  'Toucan',
+  'Vulture',
+];
+
 /**
- * Short, stable per-session display handle derived from the same seed as the
+ * Stable, friendly per-session display name derived from the same seed as the
  * identicon (the message's sessionColor, falling back to its id), e.g.
- * "anon-3f9a". Messages from one sender within an epoch share a sessionColor,
- * so they share a handle - readable grouping without any cross-epoch
- * linkability beyond what sessionColor already provides.
+ * "CaptainCardboard". Messages from one sender within an epoch share a
+ * sessionColor, so they share a name - readable grouping without any
+ * cross-epoch linkability beyond what sessionColor already provides.
  */
 export function sessionHandle(seed: string): string {
-  return `anon-${hashSeed(seed).toString(16).padStart(8, '0').slice(0, 4)}`;
+  const h = hashSeed(seed);
+  const adj = ADJECTIVES[h % ADJECTIVES.length]!;
+  const noun = NOUNS[Math.floor(h / ADJECTIVES.length) % NOUNS.length]!;
+  return `${adj}${noun}`;
 }
 
 /**
- * Generate a deterministic 5x5 mirrored identicon as an inline SVG data URI from
- * a seed (e.g. the message's sessionColor or a commitment). Pure + no deps so it
- * renders identically in tests and the browser.
+ * Generate a deterministic Dicebear "Rings"-style identicon as an inline SVG
+ * data URI from a seed (e.g. the message's sessionColor or a commitment):
+ * concentric rings whose hues are derived from the seed. Pure + no deps so it
+ * renders identically in tests and the browser. `fg`, when supplied, colors the
+ * center dot so the avatar reads with the sender's session color.
  */
 export function identiconDataUri(seed: string, fg?: string): string {
   const h = hashSeed(seed);
-  const hue = h % 360;
-  const color = fg ?? hslToHex(hue, 60, 45);
-  const cells: string[] = [];
-  // 3 columns (mirrored to 5), 5 rows = 15 bits drawn from the hash.
-  for (let row = 0; row < 5; row++) {
-    for (let col = 0; col < 3; col++) {
-      const bit = (h >> (row * 3 + col)) & 1;
-      if (bit) {
-        cells.push(rect(col, row));
-        if (col < 2) cells.push(rect(4 - col, row));
-      }
-    }
+  const baseHue = h % 360;
+  const rings: string[] = [];
+  // Four concentric rings from the outer edge inward, each a seed-derived hue.
+  const radii = [50, 39, 28, 17];
+  for (let i = 0; i < radii.length; i++) {
+    const hue = (baseHue + i * 47 + ((h >>> (i * 3)) & 7) * 11) % 360;
+    const light = 42 + ((h >>> (i * 4 + 2)) & 3) * 9;
+    rings.push(`<circle cx="50" cy="50" r="${radii[i]}" fill="${hslToHex(hue, 62, light)}"/>`);
   }
+  const dot = fg ?? hslToHex((baseHue + 180) % 360, 62, 55);
   const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5 5" shape-rendering="crispEdges">` +
-    `<rect width="5" height="5" fill="#ffffff"/>` +
-    `<g fill="${color}">${cells.join('')}</g>` +
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">` +
+    rings.join('') +
+    `<circle cx="50" cy="50" r="8" fill="${dot}"/>` +
     `</svg>`;
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-}
-
-function rect(x: number, y: number): string {
-  return `<rect x="${x}" y="${y}" width="1" height="1"/>`;
 }
