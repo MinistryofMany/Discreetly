@@ -5,20 +5,20 @@ import { LogoMark } from '@/components/brand/logo';
 
 const FEATURES = [
   {
-    title: 'True anonymity',
-    body: 'Chat without revealing who you are, backed by Semaphore zero-knowledge proofs.',
+    title: 'A pseudonym, not a profile',
+    body: "The room can tell you belong there. It can't tell who you are, so what you say stands on its own.",
   },
   {
     title: 'Spam-resistant',
-    body: 'Rate-Limiting Nullifiers stop spam without ever identifying anyone.',
+    body: 'Every room has a built-in speed limit on messages, so a flooder gets removed without anyone being unmasked.',
   },
   {
     title: 'You own your identity',
-    body: 'Your keys live only in this browser. Back them up - once lost, they are gone.',
+    body: "Your keys are created in this browser and never leave it. Back them up - if they're lost, we can't recover them, because we never had them.",
   },
   {
     title: 'Gated communities',
-    body: 'Rooms can require verifiable credential badges before you can join.',
+    body: 'A room can require a badge before you join, so everyone inside has cleared the same bar.',
   },
 ];
 
@@ -30,12 +30,12 @@ export default async function HomePage() {
       <section className="mx-auto flex max-w-2xl flex-col items-center text-center">
         <LogoMark className="h-16 w-auto text-primary" />
         <h1 className="mt-6 text-3xl tracking-tight md:text-4xl">
-          Welcome to Discreetly
+          Prove you belong. Speak freely.
         </h1>
         <p className="mt-3 text-pretty text-sm leading-relaxed text-muted-foreground md:text-base">
-          Anonymous, federated, zero-knowledge group chat. Prove you belong with
-          verifiable credential badges, then send rate-limited messages - no
-          accounts, no phone numbers, no tracking.
+          Each room sets its own bar for entry - a verified email, an invite, or being over 21 - and
+          that&apos;s the only thing it ever learns about you. Once you&apos;re in, you take part
+          under a pseudonym. No phone numbers, no real names, and some rooms keep no history at all.
         </p>
         <LandingCta />
       </section>
@@ -60,7 +60,7 @@ export default async function HomePage() {
         <section className="mx-auto mt-8 max-w-3xl rounded-md border border-border bg-card p-4">
           <p className="text-sm">Signed in.</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            You are anonymous - no account name is shown or shared.
+            Rooms know you as a pseudonym - your account name is never shown or shared.
           </p>
         </section>
       ) : null}

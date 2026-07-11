@@ -6,7 +6,8 @@ import { AppShell } from '@/components/shell/app-shell';
 
 export const metadata: Metadata = {
   title: 'Discreetly',
-  description: 'Anonymous, rate-limited chat with verifiable credentials.',
+  description:
+    'Group chat where you prove you belong, then talk under a pseudonym. Some rooms keep no history at all.',
   manifest: '/manifest.json',
 };
 
