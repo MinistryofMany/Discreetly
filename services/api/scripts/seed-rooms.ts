@@ -1,12 +1,27 @@
 // One-off test-data seeder: creates three rooms (idempotent by slug).
+//   - github-account-over-1-year-old: gated on a GitHub account older than 12 months
 //   - general-lobby : open (admit-all) — no badge required
 //   - invite-holders: gated on a Minister `invite-code` badge
-//   - github-veterans: gated on a GitHub account older than 12 months
 // Run: DATABASE_URL=... pnpm --filter @discreetly/api exec tsx scripts/seed-rooms.ts
 import { prisma } from "@discreetly/db";
 import { genId, randomBigInt } from "@ministryofmany/rln";
 
 const rooms = [
+  {
+    name: "GitHub account over 1 year old",
+    slug: "github-account-over-1-year-old",
+    description:
+      "Gated room. Requires a Minister account-age badge proving your GitHub account is over a year old.",
+    rateLimit: 60_000,
+    userMessageLimit: 10,
+    // The `account-age` badge discloses a coarse lower bound (olderThanMonths),
+    // matched exactly by the policy `where`. `oauth-account` carries no age, and
+    // policy `maxAgeDays` gates the badge's issuance recency (wrong direction),
+    // so account-age with olderThanMonths: 12 is the correct >1-year gate.
+    accessPolicy: {
+      badge: { type: "account-age", where: { provider: "github", olderThanMonths: 12 } },
+    },
+  },
   {
     name: "General Lobby",
     slug: "general-lobby",
@@ -22,21 +37,6 @@ const rooms = [
     rateLimit: 60_000,
     userMessageLimit: 10,
     accessPolicy: { badge: { type: "invite-code" } },
-  },
-  {
-    name: "GitHub Veterans",
-    slug: "github-veterans",
-    description:
-      "Gated room. Requires a Minister account-age badge proving your GitHub account is over a year old.",
-    rateLimit: 60_000,
-    userMessageLimit: 10,
-    // The `account-age` badge discloses a coarse lower bound (olderThanMonths),
-    // matched exactly by the policy `where`. `oauth-account` carries no age, and
-    // policy `maxAgeDays` gates the badge's issuance recency (wrong direction),
-    // so account-age with olderThanMonths: 12 is the correct >1-year gate.
-    accessPolicy: {
-      badge: { type: "account-age", where: { provider: "github", olderThanMonths: 12 } },
-    },
   },
 ];
 
