@@ -1,11 +1,20 @@
 /**
- * Per-browser-session display color and deterministic identicon generation.
+ * Per-browser-session display color, friendly handle, and deterministic avatar.
  *
  * `sessionColor` is generated once per browser session (persisted in
  * sessionStorage so a reload keeps it but a new tab/session gets a fresh one)
  * and attached to each `message.send` so a recipient can visually group a
  * sender's messages WITHIN an epoch without any cross-epoch linkability.
+ *
+ * DISPLAY ONLY. This color/handle/avatar are cosmetic and are derived from the
+ * ephemeral per-session `sessionColor`, NEVER from the Semaphore identity
+ * secret / membership commitment / RLN nullifier. Rotating them per session
+ * therefore has no effect on room membership or anonymity. Because the seed
+ * lives in sessionStorage (cleared when the tab/session closes), it is
+ * ephemeral and cannot serve as a persistent cross-session linkage identifier.
  */
+import { createAvatar } from '@dicebear/core';
+import { rings } from '@dicebear/collection';
 
 const SESSION_COLOR_KEY = 'discreetly.sessionColor.v1';
 
@@ -152,29 +161,22 @@ export function sessionHandle(seed: string): string {
   return `${adj}${noun}`;
 }
 
+// Memo cache: DiceBear output is deterministic per seed, and the chat feed
+// re-renders a row on every message, so cache the generated data URI to avoid
+// re-running the generator for a seed we have already rendered.
+const avatarCache = new Map<string, string>();
+
 /**
- * Generate a deterministic Dicebear "Rings"-style identicon as an inline SVG
- * data URI from a seed (e.g. the message's sessionColor or a commitment):
- * concentric rings whose hues are derived from the seed. Pure + no deps so it
- * renders identically in tests and the browser. `fg`, when supplied, colors the
- * center dot so the avatar reads with the sender's session color.
+ * Deterministic Dicebear "Rings" avatar rendered as an inline SVG data URI,
+ * seeded by the ephemeral per-session value (the message's `sessionColor`,
+ * falling back to its id). Same seed -> byte-identical avatar in the browser
+ * and in tests, so a sender's messages within an epoch share one avatar. The
+ * seed is display-only and carries no link to the Semaphore/RLN identity.
  */
-export function identiconDataUri(seed: string, fg?: string): string {
-  const h = hashSeed(seed);
-  const baseHue = h % 360;
-  const rings: string[] = [];
-  // Four concentric rings from the outer edge inward, each a seed-derived hue.
-  const radii = [50, 39, 28, 17];
-  for (let i = 0; i < radii.length; i++) {
-    const hue = (baseHue + i * 47 + ((h >>> (i * 3)) & 7) * 11) % 360;
-    const light = 42 + ((h >>> (i * 4 + 2)) & 3) * 9;
-    rings.push(`<circle cx="50" cy="50" r="${radii[i]}" fill="${hslToHex(hue, 62, light)}"/>`);
-  }
-  const dot = fg ?? hslToHex((baseHue + 180) % 360, 62, 55);
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">` +
-    rings.join('') +
-    `<circle cx="50" cy="50" r="8" fill="${dot}"/>` +
-    `</svg>`;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+export function avatarDataUri(seed: string): string {
+  const cached = avatarCache.get(seed);
+  if (cached !== undefined) return cached;
+  const uri = createAvatar(rings, { seed }).toDataUri();
+  avatarCache.set(seed, uri);
+  return uri;
 }

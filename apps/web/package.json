@@ -16,6 +16,8 @@
   },
   "dependencies": {
     "@auth/prisma-adapter": "2.11.2",
+    "@dicebear/collection": "^9.4.2",
+    "@dicebear/core": "^9.4.3",
     "@discreetly/api": "workspace:*",
     "@discreetly/circuits": "workspace:*",
     "@discreetly/db": "workspace:*",

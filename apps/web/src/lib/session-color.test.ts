@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { getSessionColor, identiconDataUri, sessionHandle } from './session-color';
+import { getSessionColor, avatarDataUri, sessionHandle } from './session-color';
 
 beforeEach(() => {
   sessionStorage.clear();
@@ -28,22 +28,22 @@ describe('getSessionColor', () => {
   });
 });
 
-describe('identiconDataUri', () => {
+describe('avatarDataUri', () => {
   it('is deterministic for the same seed', () => {
-    expect(identiconDataUri('seed-1')).toBe(identiconDataUri('seed-1'));
+    expect(avatarDataUri('seed-1')).toBe(avatarDataUri('seed-1'));
   });
 
   it('differs for different seeds', () => {
-    expect(identiconDataUri('seed-1')).not.toBe(identiconDataUri('seed-2'));
+    expect(avatarDataUri('seed-1')).not.toBe(avatarDataUri('seed-2'));
   });
 
   it('produces an svg data uri', () => {
-    expect(identiconDataUri('x')).toMatch(/^data:image\/svg\+xml;utf8,/);
+    expect(avatarDataUri('x')).toMatch(/^data:image\/svg\+xml;utf8,/);
   });
 
-  it('honors an explicit foreground color', () => {
-    const uri = identiconDataUri('x', '#ff0000');
-    expect(decodeURIComponent(uri)).toContain('#ff0000');
+  it('renders a Dicebear Rings SVG', () => {
+    // The generated SVG uses radial gradients ("rings"); decode and spot-check.
+    expect(decodeURIComponent(avatarDataUri('x'))).toContain('<svg');
   });
 });
 

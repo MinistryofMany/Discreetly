@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { decryptContent, isEncryptedEnvelope } from '@/lib/crypto-box';
-import { identiconDataUri, sessionHandle } from '@/lib/session-color';
+import { avatarDataUri, sessionHandle } from '@/lib/session-color';
 import type { ChatBroadcast, FeedItem } from '@/lib/broadcast-types';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -77,7 +77,7 @@ function ChatRow({
   return (
     <div className="group flex items-start gap-3 px-1 py-1.5">
       <Avatar className="h-8 w-8 border" style={{ borderColor: color }}>
-        <AvatarImage src={identiconDataUri(seed, color)} alt="" />
+        <AvatarImage src={avatarDataUri(seed)} alt="" />
         <AvatarFallback style={{ backgroundColor: color }} />
       </Avatar>
       <div className="min-w-0 flex-1">

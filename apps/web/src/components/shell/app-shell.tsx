@@ -1,4 +1,5 @@
 import { AppHeader } from './app-header';
+import { AppFooter } from './app-footer';
 import { AppRail } from './app-rail';
 import { MobileNav } from './mobile-nav';
 
@@ -15,6 +16,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <AppRail />
         <main className="min-w-0 flex-1 overflow-y-auto">{children}</main>
       </div>
+      <AppFooter />
       <MobileNav />
     </div>
   );
