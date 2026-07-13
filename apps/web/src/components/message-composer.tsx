@@ -7,7 +7,7 @@ import { useTRPC } from '@/lib/trpc';
 import { useIdentity } from '@/lib/identity-context';
 import { currentEpoch, nextMessageId } from '@/lib/rln';
 import { encryptContent } from '@/lib/crypto-box';
-import { getSessionColor, identiconDataUri, sessionHandle } from '@/lib/session-color';
+import { getSessionColor, avatarDataUri, sessionHandle } from '@/lib/session-color';
 import { getLocalMembership } from '@/lib/local-membership';
 import type { PublicRoom } from '@/lib/room-types';
 import { Button } from '@/components/ui/button';
@@ -165,7 +165,7 @@ export function MessageComposer({
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={identiconDataUri(sessionSeed, getSessionColor())}
+            src={avatarDataUri(sessionSeed)}
             alt=""
             className="h-5 w-5 shrink-0 rounded-full border"
           />
