@@ -14,6 +14,7 @@
  * the start with no redirect.
  */
 import { NextResponse, type NextRequest } from 'next/server';
+import { generatePkce, randomUrlToken } from '@ministryofmany/client';
 import { prisma } from '@discreetly/db';
 import { checkRateLimit } from '@discreetly/api/rate-limit';
 import type { PolicyNode } from '@discreetly/policy';
@@ -77,9 +78,9 @@ export async function GET(req: NextRequest): Promise<Response> {
   const ministerPolicy = encodeMinisterPolicy(policy);
 
   const client = ministerClientForRoomAuth();
-  const { verifier: codeVerifier, challenge } = await client.generatePkce();
-  const state = client.randomToken();
-  const nonce = client.randomToken();
+  const { verifier: codeVerifier, challenge } = await generatePkce();
+  const state = randomUrlToken();
+  const nonce = randomUrlToken();
 
   // Persist the pre-redirect flow state. The callback consumes it by `state`.
   await prisma.roomAuthFlow.create({
