@@ -24,6 +24,7 @@
     "@discreetly/policy": "workspace:*",
     "@discreetly/shared": "workspace:*",
     "@ministryofmany/client": "link:../../../minister-client",
+    "@ministryofmany/identity": "link:../../../minister-client/packages/identity",
     "@ministryofmany/policy": "link:../../../minister-client/packages/policy",
     "@ministryofmany/rln": "link:../../../minister-client/packages/rln",
     "@prisma/client": "^6.19.3",

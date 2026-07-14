@@ -7,6 +7,14 @@ import { TRPCClientError } from '@trpc/client';
 import { Toaster } from 'sonner';
 import { TRPCProvider, makeTRPCClient } from '@/lib/trpc';
 import { IdentityProvider } from '@/lib/identity-context';
+import { captureMinisterAnonFragment } from '@/lib/minister-anon';
+
+// Capture + scrub a Ministry anon-identity fragment (#minister_anon=...) at
+// module evaluation - the earliest app-controllable client-side point, before
+// hydration, any effect, or any router navigation could read or destroy it
+// (anon-identity spec findings S3/S4). No-op on the server and when no
+// fragment is present.
+captureMinisterAnonFragment();
 
 /**
  * Best-effort HTTP status of a failed tRPC request. A tRPC-shaped error
@@ -42,9 +50,7 @@ function makeQueryClient() {
           // 30-60s for a rate-limited request, else 1s/2s/4s... capped at 30s,
           // both with equal jitter so parallel queries do not re-fire in sync.
           const base =
-            httpStatusOf(error) === 429
-              ? 60_000
-              : Math.min(1_000 * 2 ** attempt, 30_000);
+            httpStatusOf(error) === 429 ? 60_000 : Math.min(1_000 * 2 ** attempt, 30_000);
           return base / 2 + Math.random() * (base / 2);
         },
       },
@@ -64,9 +70,7 @@ function TRPCWithSession({ children }: { children: React.ReactNode }) {
   idTokenRef.current = session?.idToken ?? null;
 
   const [queryClient] = useState(makeQueryClient);
-  const [trpcClient] = useState(() =>
-    makeTRPCClient(() => idTokenRef.current),
-  );
+  const [trpcClient] = useState(() => makeTRPCClient(() => idTokenRef.current));
 
   // The id_token now travels only in the Authorization header, so it is not part
   // of any query key. When the session token changes (sign-in / sign-out / token

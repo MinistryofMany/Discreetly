@@ -11,6 +11,7 @@ import {
   clear,
   createIdentity,
   decryptIdentity,
+  deriveIdentityFromDeviceSeed,
   encryptIdentity,
   exportBackup,
   exportPlaintextBackup,
@@ -212,5 +213,54 @@ describe('backupIsPlaintext', () => {
   it('is false for a non-backup file and for invalid JSON', () => {
     expect(backupIsPlaintext(JSON.stringify({ foo: 'bar' }))).toBe(false);
     expect(backupIsPlaintext('not json at all')).toBe(false);
+  });
+});
+
+describe('deriveIdentityFromDeviceSeed', () => {
+  const SEED = Uint8Array.from({ length: 32 }, (_, i) => i + 1);
+
+  it('is deterministic and does not mutate the input seed', async () => {
+    const a = await deriveIdentityFromDeviceSeed(SEED);
+    const b = await deriveIdentityFromDeviceSeed(SEED);
+    expect(a.serialized).toBe(b.serialized);
+    expect(a.commitment).toBe(b.commitment);
+    expect(Array.from(SEED)).toEqual(Array.from({ length: 32 }, (_, i) => i + 1));
+  });
+
+  it('keeps the v3 chain invariants and draws valid 253-bit field elements', async () => {
+    const id = await deriveIdentityFromDeviceSeed(SEED);
+    expect(id.commitment).toBe(getIdentityCommitmentFromSecret(id.secret));
+    // Byte-compatible with the real v3 Identity (same oracle as createIdentity).
+    const restored = new Identity(id.serialized);
+    expect(restored.secret).toBe(id.secret);
+    expect(restored.commitment).toBe(id.commitment);
+    const [trapdoor, nullifier] = JSON.parse(id.serialized) as [string, string];
+    expect(BigInt(trapdoor) < 1n << 253n).toBe(true);
+    expect(BigInt(nullifier) < 1n << 253n).toBe(true);
+  });
+
+  it('derives distinct identities from distinct seeds', async () => {
+    const other = await deriveIdentityFromDeviceSeed(new Uint8Array(32).fill(0xab));
+    const id = await deriveIdentityFromDeviceSeed(SEED);
+    expect(other.commitment).not.toBe(id.commitment);
+  });
+
+  it('rejects a wrong-length seed (SDK validation, fail-loud)', async () => {
+    await expect(deriveIdentityFromDeviceSeed(new Uint8Array(16))).rejects.toThrow(/32 bytes/);
+  });
+
+  it('FREEZE: pinned derivation output - a change here forks every Ministry-linked identity', async () => {
+    // Pins the whole derivation (SDK HKDF construction + the Discreetly
+    // context strings + the 253-bit masking). If this test ever fails, the
+    // derivation changed and every Ministry-derived identity would silently
+    // fork (anon-identity spec invariant I9). Do NOT update the expected
+    // value to make it pass - revert the derivation change instead.
+    const id = await deriveIdentityFromDeviceSeed(SEED);
+    expect(id.serialized).toBe(
+      '["0x1f3cc68b4509ba1e3e783d83fe06b8372a055ad921417a6457e94fde0b5f9251","0x1c510ccd6a454209401bf536e68a4bc91f9df26c96648e6000fdf4cd66d6a947"]',
+    );
+    expect(id.commitment.toString()).toBe(
+      '4101297685912469959843685678433841285885946282391482852210673282964151980640',
+    );
   });
 });

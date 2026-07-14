@@ -179,7 +179,19 @@ MINISTER_CLIENT_ID="discreetly_dev"
 MINISTER_CLIENT_SECRET="<from Minister dev config>"
 NEXT_PUBLIC_API_URL="http://localhost:3002"
 NEXT_PUBLIC_API_WS_URL="ws://localhost:3002"
+MINISTER_ANON_RP_MIX_SECRET="<openssl rand -hex 32 - see apps/web/.env.example>"
 ```
+
+`MINISTER_ANON_RP_MIX_SECRET` (optional) enables the Ministry
+anonymous-identity handoff (anon-identity master spec 8.4/9): when Minister
+delivers a `#minister_anon` fragment on the OIDC redirect, the browser mixes
+this secret into it (HKDF) and derives the user's Semaphore identity
+deterministically instead of randomly (`apps/web/src/lib/minister-anon.ts`).
+Unset = handoff disabled, fail-closed, behavior unchanged. ⚠ The value is
+IDENTITY-DETERMINING (spec invariant I9): provision once, back it up with
+database-grade durability (prod: AWS SSM SecureString is the source of truth -
+see `apps/web/.env.example` for the full recovery story), and never rotate or
+regenerate it - a changed value silently forks every user's derived identity.
 
 ---
 

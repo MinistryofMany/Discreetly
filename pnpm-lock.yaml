@@ -60,6 +60,9 @@ importers:
       '@ministryofmany/client':
         specifier: link:../../../minister-client
         version: link:../../../minister-client
+      '@ministryofmany/identity':
+        specifier: link:../../../minister-client/packages/identity
+        version: link:../../../minister-client/packages/identity
       '@ministryofmany/policy':
         specifier: link:../../../minister-client/packages/policy
         version: link:../../../minister-client/packages/policy

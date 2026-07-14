@@ -118,19 +118,68 @@ export function createIdentity(): AppIdentity {
   return fromSerialized(serializeV3Identity(trapdoor, nullifier));
 }
 
+/**
+ * HKDF context strings for the Ministry-derived identity (anon-identity master
+ * spec 9.3). VERSIONED AND FROZEN: changing either string (or the SDK's
+ * derivation they feed) silently re-derives a different identity for every
+ * Ministry-linked user. The freeze test in identity.test.ts pins the output.
+ */
+const MINISTER_TRAPDOOR_CONTEXT = 'discreetly/identity/v3/trapdoor/v1';
+const MINISTER_NULLIFIER_CONTEXT = 'discreetly/identity/v3/nullifier/v1';
+
+/**
+ * Interpret 32 derived bytes as a 253-bit field element - the top 3 bits are
+ * masked off, giving exactly the distribution `randomBigInt(253)` draws for
+ * the random-identity path (uniform in [0, 2^253), always < the BN254 scalar
+ * field order). Mutates `bytes` (callers zeroize it right after anyway).
+ */
+function to253BitField(bytes: Uint8Array): bigint {
+  bytes[0] = bytes[0]! & 0x1f;
+  let hex = '0x';
+  for (let i = 0; i < bytes.length; i++) {
+    hex += bytes[i]!.toString(16).padStart(2, '0');
+  }
+  return BigInt(hex);
+}
+
+/**
+ * Deterministically derive the Semaphore v3 identity from a Ministry-derived
+ * 32-byte device seed (see `minister-anon.ts`): the seed expands into the
+ * (trapdoor, nullifier) pair via the SDK's HKDF seam with Discreetly-versioned
+ * context strings, then feeds the EXISTING chain unchanged (`fromSerialized`
+ * derives secret + commitment exactly as `createIdentity` does).
+ *
+ * Same seed -> same identity, which is what makes a Ministry-linked identity
+ * recoverable on a new device. Does not mutate or retain `deviceSeed` (the
+ * caller owns and zeroizes it); intermediate key buffers are zeroized here.
+ */
+export async function deriveIdentityFromDeviceSeed(deviceSeed: Uint8Array): Promise<AppIdentity> {
+  // Lazy import: the SDK (Semaphore v4 dependency tree) stays out of the boot
+  // bundle; this path only runs on an explicit identity create.
+  const { derivePrivateKeyBytes } = await import('@ministryofmany/identity');
+  const [trapdoorBytes, nullifierBytes] = await Promise.all([
+    derivePrivateKeyBytes(deviceSeed, MINISTER_TRAPDOOR_CONTEXT),
+    derivePrivateKeyBytes(deviceSeed, MINISTER_NULLIFIER_CONTEXT),
+  ]);
+  try {
+    const trapdoor = to253BitField(trapdoorBytes);
+    const nullifier = to253BitField(nullifierBytes);
+    return fromSerialized(serializeV3Identity(trapdoor, nullifier));
+  } finally {
+    trapdoorBytes.fill(0);
+    nullifierBytes.fill(0);
+  }
+}
+
 async function deriveKey(
   password: string,
   salt: Uint8Array,
   iterations: number,
 ): Promise<CryptoKey> {
   const s = subtle();
-  const baseKey = await s.importKey(
-    'raw',
-    new TextEncoder().encode(password),
-    'PBKDF2',
-    false,
-    ['deriveKey'],
-  );
+  const baseKey = await s.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, [
+    'deriveKey',
+  ]);
   return s.deriveKey(
     { name: 'PBKDF2', salt: salt as unknown as BufferSource, iterations, hash: PBKDF2_HASH },
     baseKey,
