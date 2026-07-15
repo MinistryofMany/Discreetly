@@ -221,8 +221,8 @@ importers:
         specifier: 3.10.1
         version: 3.10.1
       ffjavascript:
-        specifier: 0.2.60
-        version: 0.2.60
+        specifier: 0.3.1
+        version: 0.3.1
       poseidon-lite:
         specifier: 0.2.0
         version: 0.2.0
@@ -2643,9 +2643,6 @@ packages:
 
   ffjavascript@0.2.55:
     resolution: {integrity: sha512-8X0FCIPOWiK6DTWh3pnE3O6D6nIQsirStAXpWMzRDnoDX7SEnDX4I28aVhwjL7L35XS1vy2AU7zc0UCGYxdLjw==}
-
-  ffjavascript@0.2.60:
-    resolution: {integrity: sha512-T/9bnEL5xAZRDbQoEMf+pM9nrhK+C3JyZNmqiWub26EQorW7Jt+jR54gpqDhceA4Nj0YctPQwYnl8xa52/A26A==}
 
   ffjavascript@0.3.0:
     resolution: {integrity: sha512-l7sR5kmU3gRwDy8g0Z2tYBXy5ttmafRPFOqY7S6af5cq51JqJWt5eQ/lSR/rs2wQNbDYaYlQr5O+OSUf/oMLoQ==}
@@ -6316,12 +6313,6 @@ snapshots:
       big-integer: 1.6.52
       wasmbuilder: 0.0.12
       wasmcurves: 0.1.0
-      web-worker: 1.5.0
-
-  ffjavascript@0.2.60:
-    dependencies:
-      wasmbuilder: 0.0.16
-      wasmcurves: 0.2.2
       web-worker: 1.5.0
 
   ffjavascript@0.3.0:
