@@ -190,7 +190,6 @@ interface RoomFormState {
   description: string;
   rateLimit: string;
   userMessageLimit: string;
-  maxDevices: string;
   visibility: 'PUBLIC' | 'PRIVATE';
   persistence: 'PERSISTENT' | 'EPHEMERAL';
   encryption: 'PLAINTEXT' | 'AES';
@@ -206,7 +205,6 @@ function makeDefaultRoomForm(): RoomFormState {
     description: '',
     rateLimit: '20',
     userMessageLimit: '100',
-    maxDevices: '5',
     visibility: 'PUBLIC',
     persistence: 'PERSISTENT',
     encryption: 'PLAINTEXT',
@@ -237,7 +235,6 @@ function roomToFormState(room: AdminRoom): { form: RoomFormState; policyParseErr
       description: room.description ?? '',
       rateLimit: String(room.rateLimit),
       userMessageLimit: String(room.userMessageLimit),
-      maxDevices: String(room.maxDevices),
       visibility: room.visibility,
       persistence: room.persistence,
       encryption: room.encryption,
@@ -323,7 +320,6 @@ function RoomDialog({ open, onClose, editRoom }: RoomDialogProps) {
       description: form.description.trim() || undefined,
       rateLimit: Number(form.rateLimit),
       userMessageLimit: Number(form.userMessageLimit),
-      maxDevices: Number(form.maxDevices),
       visibility: form.visibility,
       persistence: form.persistence,
       encryption: form.encryption,
@@ -405,7 +401,7 @@ function RoomDialog({ open, onClose, editRoom }: RoomDialogProps) {
             <FieldHelp>One line telling people what the room is for.</FieldHelp>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="mb-1 block text-xs">Rate limit</Label>
               <Input
@@ -434,17 +430,6 @@ function RoomDialog({ open, onClose, editRoom }: RoomDialogProps) {
                 How many messages one member may send within each window. Going over it is treated
                 as spam and removes them from the room.
               </FieldHelp>
-            </div>
-            <div>
-              <Label className="mb-1 block text-xs">Max devices</Label>
-              <Input
-                type="number"
-                min={1}
-                required
-                value={form.maxDevices}
-                onChange={(e) => field('maxDevices', e.target.value)}
-              />
-              <FieldHelp>How many devices one person may use to join this room at once.</FieldHelp>
             </div>
           </div>
 
@@ -1102,9 +1087,6 @@ function MembersTab() {
                   {m.leaves.map((leaf) => (
                     <div key={leaf.identityCommitment} className="rounded bg-muted/40 p-2 text-xs">
                       <p className="break-all font-mono">IC: {leaf.identityCommitment}</p>
-                      {leaf.deviceLabel && (
-                        <p className="text-muted-foreground">Label: {leaf.deviceLabel}</p>
-                      )}
                     </div>
                   ))}
                 </div>

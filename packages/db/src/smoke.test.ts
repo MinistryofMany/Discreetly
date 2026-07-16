@@ -34,8 +34,8 @@ describe('db smoke', () => {
         joinNullifier: 'nullifier-abc',
         leaves: {
           create: [
-            { roomId, identityCommitment: 'IC1', rateCommitment: 'RC1', deviceLabel: 'Phone' },
-            { roomId, identityCommitment: 'IC2', rateCommitment: 'RC2', deviceLabel: 'Laptop' },
+            { roomId, identityCommitment: 'IC1', rateCommitment: 'RC1' },
+            { roomId, identityCommitment: 'IC2', rateCommitment: 'RC2' },
           ],
         },
       },

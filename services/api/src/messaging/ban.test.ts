@@ -5,7 +5,7 @@ import { joinRoom } from '../membership/membership.js';
 import { banOnCollision, RLN_COLLISION_ACTOR } from './ban.js';
 
 const ctx = makeProofCtx(54321n, 1n); // userMessageLimit must match the room's (1)
-let room: { id: string; rlnIdentifier: string; userMessageLimit: number; maxDevices: number };
+let room: { id: string; rlnIdentifier: string; userMessageLimit: number };
 
 beforeAll(async () => {
   const r = await prisma.room.create({
@@ -15,7 +15,6 @@ beforeAll(async () => {
       rlnIdentifier: `${ctx.rlnIdentifier}`,
       rateLimit: 10_000,
       userMessageLimit: 1,
-      maxDevices: 5,
       accessPolicy: { badge: { type: 'x' } },
     },
   });
@@ -23,7 +22,6 @@ beforeAll(async () => {
     id: r.id,
     rlnIdentifier: r.rlnIdentifier,
     userMessageLimit: r.userMessageLimit,
-    maxDevices: r.maxDevices,
   };
 });
 afterAll(async () => {

@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import { useSubscription, type TRPCSubscriptionStatus } from '@trpc/tanstack-react-query';
 import { useTRPC, useWsExhausted, retryWsRealtime } from '@/lib/trpc';
 import { useIsAdmin } from '@/components/shell/use-is-admin';
-import { useIdentity } from '@/lib/identity-context';
+import { useRoomIdentity } from '@/lib/identity-context';
 import { rateCommitmentFor } from '@/lib/rln';
 import { computeEligibility } from '@/lib/badges';
 import { asPolicyNode, type PublicRoom } from '@/lib/room-types';
@@ -17,9 +17,7 @@ import { TOMBSTONE_MARKER } from '@/lib/broadcast-types';
 import { MessageFeed } from '@/components/message-feed';
 import { MessageComposer } from '@/components/message-composer';
 import { JoinPanel } from '@/components/join-panel';
-import { RotateDevice } from '@/components/rotate-device';
 import { AesPanel } from '@/components/aes-panel';
-import { IdentityPanel } from '@/components/identity-panel';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
@@ -27,7 +25,9 @@ import { Button } from '@/components/ui/button';
 export function RoomView({ roomId }: { roomId: string }) {
   const trpc = useTRPC();
   const { data: session } = useSession();
-  const { identity } = useIdentity();
+  // This account's room identity, derived from the Ministry branch (no password,
+  // no local generation). Null while deriving or when no branch is cached.
+  const { identity, loading: identityLoading } = useRoomIdentity(roomId);
   const idToken = session?.idToken ?? undefined;
 
   // room.get / room.leaves read the caller's id_token from the Authorization
@@ -330,15 +330,10 @@ export function RoomView({ roomId }: { roomId: string }) {
 
       {!identity ? (
         <div className="mt-3 space-y-2">
-          {gated && !roomToken && !joined ? (
-            // P1.3: the per-room disclosure is a full-page OIDC redirect that
-            // drops the in-memory identity anyway, so run it BEFORE unlocking:
-            // disclose first (roomToken survives in sessionStorage), then
-            // unlock once on return - instead of unlock → redirect → unlock.
+          {gated && !roomToken ? (
             <div className="rounded-md border border-border bg-card p-3">
               <p className="text-sm text-muted-foreground">
-                This room requires badge disclosure. Disclose first - then unlock your identity
-                once when you are back.
+                This room requires badge disclosure. Disclose for this room to continue.
               </p>
               <Button className="mt-2" onClick={signInForRoom}>
                 Disclose badges for this room
@@ -346,14 +341,16 @@ export function RoomView({ roomId }: { roomId: string }) {
             </div>
           ) : null}
           <p className="text-sm text-muted-foreground">
-            Unlock or create your identity to participate.
+            {identityLoading
+              ? 'Preparing your anonymous identity…'
+              : 'Sign in with Minister to set up your anonymous identity for this room.'}
           </p>
-          <IdentityPanel />
         </div>
       ) : !joined ? (
         <div className="mt-3">
           <JoinPanel
             room={room}
+            identity={identity}
             roomToken={roomToken}
             onJoined={() => {
               clearRoomToken();
@@ -362,24 +359,15 @@ export function RoomView({ roomId }: { roomId: string }) {
           />
         </div>
       ) : (
-        <>
-          <MessageComposer
-            room={room}
-            leaves={leaves}
-            aesKey={aesKey}
-            onSent={() => {
-              void leavesQuery.refetch();
-            }}
-          />
-          <div className="mt-1 flex justify-end">
-            <RotateDevice
-              room={room}
-              onRotated={() => {
-                void leavesQuery.refetch();
-              }}
-            />
-          </div>
-        </>
+        <MessageComposer
+          room={room}
+          identity={identity}
+          leaves={leaves}
+          aesKey={aesKey}
+          onSent={() => {
+            void leavesQuery.refetch();
+          }}
+        />
       )}
 
       {sub.status === 'error' || wsExhausted ? (

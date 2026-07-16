@@ -58,7 +58,6 @@ async function createRoom(opts: RoomOpts) {
       rlnIdentifier: String(Date.now()) + String(Math.floor(Math.random() * 1_000_000)),
       rateLimit: 1000,
       userMessageLimit: 100,
-      maxDevices: 3,
       visibility: 'PUBLIC',
       encryption: 'PLAINTEXT',
       accessPolicy: opts.accessPolicy,

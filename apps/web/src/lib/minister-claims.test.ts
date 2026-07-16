@@ -25,6 +25,7 @@ describe('decodeMinisterClaims', () => {
       name: 'Alice',
       picture: 'https://example.com/a.png',
       ministerBadges: ['vc.jwt.one', 'vc.jwt.two'],
+      anonEpoch: null,
     });
   });
 
@@ -34,6 +35,7 @@ describe('decodeMinisterClaims', () => {
       name: null,
       picture: null,
       ministerBadges: [],
+      anonEpoch: null,
     });
   });
 
@@ -43,6 +45,7 @@ describe('decodeMinisterClaims', () => {
       name: null,
       picture: null,
       ministerBadges: [],
+      anonEpoch: null,
     });
   });
 
@@ -53,6 +56,7 @@ describe('decodeMinisterClaims', () => {
       name: null,
       picture: null,
       ministerBadges: [],
+      anonEpoch: null,
     });
   });
 
@@ -68,11 +72,29 @@ describe('decodeMinisterClaims', () => {
       name: null,
       picture: null,
       ministerBadges: ['good', 'also-good'],
+      anonEpoch: null,
     });
   });
 
   it('treats a non-array minister_badges as empty', () => {
     const token = makeJwt({ sub: 'x', minister_badges: 'oops-a-string' });
     expect(decodeMinisterClaims(token).ministerBadges).toEqual([]);
+  });
+
+  it('extracts a valid minister_anon_epoch (integer >= 1)', () => {
+    expect(decodeMinisterClaims(makeJwt({ sub: 'x', minister_anon_epoch: 7 })).anonEpoch).toBe(7);
+  });
+
+  it('rejects a non-integer, zero, negative, or non-number epoch (fail-closed to null)', () => {
+    expect(decodeMinisterClaims(makeJwt({ sub: 'x', minister_anon_epoch: 0 })).anonEpoch).toBeNull();
+    expect(
+      decodeMinisterClaims(makeJwt({ sub: 'x', minister_anon_epoch: -3 })).anonEpoch,
+    ).toBeNull();
+    expect(
+      decodeMinisterClaims(makeJwt({ sub: 'x', minister_anon_epoch: 1.5 })).anonEpoch,
+    ).toBeNull();
+    expect(
+      decodeMinisterClaims(makeJwt({ sub: 'x', minister_anon_epoch: '2' })).anonEpoch,
+    ).toBeNull();
   });
 });

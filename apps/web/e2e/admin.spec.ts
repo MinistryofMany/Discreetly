@@ -115,7 +115,6 @@ test('admin: ban by IC, ban by join-nullifier, unban, inspect members', async ({
           roomId: room.id,
           identityCommitment: ic,
           rateCommitment,
-          deviceLabel: 'd1',
         },
       },
     },

@@ -1,12 +1,12 @@
 import { evaluate, parsePolicy, type PolicyNode } from '@discreetly/policy';
-import type { VerifiedIdentity } from '../minister/verify.js';
+import type { VerifiedIdentityWithEpoch } from '../minister/verify.js';
 import { joinNullifier } from './join-nullifier.js';
 
 export interface GateInput {
   idToken: string;
   rlnIdentifier: bigint;
   policy: PolicyNode;
-  verify: (idToken: string) => Promise<VerifiedIdentity>;
+  verify: (idToken: string) => Promise<VerifiedIdentityWithEpoch>;
   now?: number;
 }
 
@@ -14,6 +14,12 @@ export interface GateResult {
   allowed: boolean;
   sub: string;
   joinNullifier: bigint;
+  /**
+   * The verified `minister_anon_epoch` from the id_token (undefined when the
+   * token carries no epoch claim). Authorizes an epoch-gated leaf write in
+   * `membership.join` / `membership.rotate` (audit finding C1).
+   */
+  tokenEpoch?: number;
 }
 
 /**
@@ -31,7 +37,7 @@ export interface GateResult {
  * (the badge is a one-time gate).
  */
 export async function evaluateGate(input: GateInput): Promise<GateResult> {
-  const { sub, badges } = await input.verify(input.idToken);
+  const { sub, badges, minister_anon_epoch } = await input.verify(input.idToken);
   const now = input.now ?? Math.floor(Date.now() / 1000);
 
   let allowed = false;
@@ -45,5 +51,10 @@ export async function evaluateGate(input: GateInput): Promise<GateResult> {
     // malformed/unrecognized policy => fail closed (deny)
     allowed = false;
   }
-  return { allowed, sub, joinNullifier: joinNullifier(sub, input.rlnIdentifier) };
+  return {
+    allowed,
+    sub,
+    joinNullifier: joinNullifier(sub, input.rlnIdentifier),
+    tokenEpoch: minister_anon_epoch,
+  };
 }

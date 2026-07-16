@@ -19,7 +19,7 @@ test.beforeAll(async () => {
   await resetData();
 });
 
-async function createRoom(opts: { name: string; slug: string; maxDevices?: number }) {
+async function createRoom(opts: { name: string; slug: string }) {
   const db = getPrisma();
   return db.room.create({
     data: {
@@ -28,7 +28,6 @@ async function createRoom(opts: { name: string; slug: string; maxDevices?: numbe
       rlnIdentifier: String(Date.now()) + String(Math.floor(Math.random() * 1000)),
       rateLimit: 1000,
       userMessageLimit: 100,
-      maxDevices: opts.maxDevices ?? 3,
       visibility: 'PUBLIC',
       encryption: 'PLAINTEXT',
       accessPolicy: { allOf: [] },
@@ -99,7 +98,7 @@ test('membership.rotate swaps the leaf for the same membership and activates the
 
 test('device-limit: a second device join is refused when maxDevices is 1', async ({ page }) => {
   const db = getPrisma();
-  const room = await createRoom({ name: 'Solo Room', slug: unique('solo'), maxDevices: 1 });
+  const room = await createRoom({ name: 'Solo Room', slug: unique('solo') });
 
   // First device joins fine.
   await enterAndJoin(page, room.id);

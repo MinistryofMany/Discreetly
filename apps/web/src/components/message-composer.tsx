@@ -4,7 +4,7 @@ import * as React from 'react';
 import { toast } from 'sonner';
 import { useMutation } from '@tanstack/react-query';
 import { useTRPC } from '@/lib/trpc';
-import { useIdentity } from '@/lib/identity-context';
+import type { AppIdentity } from '@/lib/identity';
 import { currentEpoch, nextMessageId } from '@/lib/rln';
 import { encryptContent } from '@/lib/crypto-box';
 import { getSessionColor, avatarDataUri, sessionHandle } from '@/lib/session-color';
@@ -45,17 +45,19 @@ function describeSend(result: SendOutcome): { ok: boolean; message: string } {
 
 export function MessageComposer({
   room,
+  identity,
   leaves,
   aesKey,
   onSent,
 }: {
   room: PublicRoom;
+  /** This account's identity for the room, derived from the Ministry branch. */
+  identity: AppIdentity;
   leaves: readonly string[];
   aesKey: CryptoKey | null;
   onSent: () => void;
 }) {
   const trpc = useTRPC();
-  const { identity } = useIdentity();
   const [content, setContent] = React.useState('');
   const [sending, setSending] = React.useState(false);
   // The session display identity (name + icon). Read after mount only: it lives
@@ -73,10 +75,6 @@ export function MessageComposer({
   const aesReady = !aesRequired || aesKey !== null;
 
   async function handleSend() {
-    if (!identity) {
-      toast.error('Unlock your identity to send.');
-      return;
-    }
     const text = content.trim();
     if (text.length === 0) return;
     if (aesRequired && !aesKey) {
@@ -157,7 +155,7 @@ export function MessageComposer({
     }
   }
 
-  const disabled = sending || !identity || !aesReady;
+  const disabled = sending || !aesReady;
 
   return (
     <div className="mt-3 space-y-2">

@@ -158,7 +158,7 @@ describe('message.list', () => {
     const jn = joinNullifier(sub, BigInt(PRIVATE_RLN)).toString();
     const room = await prisma.room.findUniqueOrThrow({
       where: { id: privateRoomId },
-      select: { id: true, rlnIdentifier: true, userMessageLimit: true, maxDevices: true },
+      select: { id: true, rlnIdentifier: true, userMessageLimit: true },
     });
     await joinRoom({ room, joinNullifier: jn, identityCommitment: `77777${TS}` });
     const token = await signIdToken({ sub });

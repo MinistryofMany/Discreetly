@@ -5,19 +5,17 @@ import { toast } from 'sonner';
 import { useMutation } from '@tanstack/react-query';
 import { useSession } from 'next-auth/react';
 import { useTRPC } from '@/lib/trpc';
-import { useIdentity } from '@/lib/identity-context';
+import type { AppIdentity } from '@/lib/identity';
 import { computeEligibility } from '@/lib/badges';
 import { recordLocalMembership } from '@/lib/local-membership';
 import { asPolicyNode, type PublicRoom } from '@/lib/room-types';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 const JOIN_REASONS: Record<string, string> = {
   banned: 'This identity is banned from the room.',
-  'device-limit': 'This room has reached its device limit for you.',
+  'device-limit': 'You are already a member of this room on this account.',
   'already-on-device': 'This device is already a member of the room.',
   'policy-denied':
     'Your disclosed badges do not satisfy this room. Re-sign in to disclose the required badges.',
@@ -26,10 +24,13 @@ const JOIN_REASONS: Record<string, string> = {
 
 export function JoinPanel({
   room,
+  identity,
   roomToken,
   onJoined,
 }: {
   room: PublicRoom;
+  /** This account's identity for the room, derived from the Ministry branch. */
+  identity: AppIdentity;
   /**
    * The FRESH per-room id_token minted by the SDK disclosure flow, picked up by
    * the parent RoomView from the callback redirect. Used for the join INSTEAD of
@@ -41,8 +42,6 @@ export function JoinPanel({
 }) {
   const trpc = useTRPC();
   const { data: session } = useSession();
-  const { identity } = useIdentity();
-  const [deviceLabel, setDeviceLabel] = React.useState('');
   const [joining, setJoining] = React.useState(false);
 
   const joinMutation = useMutation(trpc.membership.join.mutationOptions());
@@ -78,17 +77,12 @@ export function JoinPanel({
       toast.error('Sign in for this room first to disclose the required badges.');
       return;
     }
-    if (!identity) {
-      toast.error('Create or unlock an identity first.');
-      return;
-    }
     setJoining(true);
     try {
       const res = (await joinMutation.mutateAsync({
         roomId: room.id,
         idToken: idTokenForJoin,
         identityCommitment: identity.commitment.toString(),
-        deviceLabel: deviceLabel.trim() || undefined,
       })) as { ok: boolean; reason?: string; authorToken?: string };
 
       if (res.ok) {
@@ -165,7 +159,8 @@ export function JoinPanel({
             - the global Auth.js session token (`session.idToken`) is badge-free.
           The per-room flow does NOT create an Auth.js session, so the Join
           button is gated on having SOME usable id_token (per-room or session)
-          plus an unlocked identity - not on the presence of a global session.
+          - not on the presence of a global session. The identity itself is
+          always present here (derived from the Ministry branch).
         */}
         {!idTokenForJoin ? (
           // No usable token yet: run the SDK disclosure flow for this room.
@@ -173,50 +168,33 @@ export function JoinPanel({
           // the per-room badge disclosure.
           <Button onClick={signInForRoom}>Disclose badges for this room</Button>
         ) : (
-          <>
-            <div className="space-y-2">
-              <Label htmlFor="device-label">Device label (optional)</Label>
-              <Input
-                id="device-label"
-                value={deviceLabel}
-                placeholder="e.g. laptop"
-                onChange={(e) => setDeviceLabel(e.target.value)}
-                disabled={joining}
-              />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {(() => {
-                // A gated room is only joinable once the badges are disclosed:
-                // either a fresh per-room token exists or the session badges
-                // already look sufficient. Until then the disclosure CTA is the
-                // primary action and Join is inert - the old layout put a
-                // always-denied Join first and users walked into policy-denied.
-                const gated = eligibility.requiredScopes.length > 0;
-                const canJoin = !gated || Boolean(roomToken) || eligibility.satisfied;
-                return (
-                  <>
-                    {gated && !roomToken ? (
-                      <Button variant={canJoin ? 'outline' : 'default'} onClick={signInForRoom}>
-                        Disclose badges for this room
-                      </Button>
-                    ) : null}
-                    <Button
-                      variant={canJoin ? 'default' : 'outline'}
-                      onClick={handleJoin}
-                      disabled={joining || !identity || !canJoin}
-                    >
-                      {joining ? 'Joining...' : 'Join'}
+          <div className="flex flex-wrap gap-2">
+            {(() => {
+              // A gated room is only joinable once the badges are disclosed:
+              // either a fresh per-room token exists or the session badges
+              // already look sufficient. Until then the disclosure CTA is the
+              // primary action and Join is inert - the old layout put a
+              // always-denied Join first and users walked into policy-denied.
+              const gated = eligibility.requiredScopes.length > 0;
+              const canJoin = !gated || Boolean(roomToken) || eligibility.satisfied;
+              return (
+                <>
+                  {gated && !roomToken ? (
+                    <Button variant={canJoin ? 'outline' : 'default'} onClick={signInForRoom}>
+                      Disclose badges for this room
                     </Button>
-                  </>
-                );
-              })()}
-            </div>
-            {!identity ? (
-              <p className="text-xs text-amber-600">
-                Unlock or create an identity (top-right) before joining.
-              </p>
-            ) : null}
-          </>
+                  ) : null}
+                  <Button
+                    variant={canJoin ? 'default' : 'outline'}
+                    onClick={handleJoin}
+                    disabled={joining || !canJoin}
+                  >
+                    {joining ? 'Joining...' : 'Join'}
+                  </Button>
+                </>
+              );
+            })()}
+          </div>
         )}
       </CardContent>
     </Card>

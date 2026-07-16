@@ -40,7 +40,6 @@ model Room {
   rlnIdentifier    String          @unique
   rateLimit        Int
   userMessageLimit Int
-  maxDevices       Int             @default(5)
   visibility       RoomVisibility  @default(PUBLIC)
   persistence      RoomPersistence @default(PERSISTENT)
   encryption       RoomEncryption  @default(PLAINTEXT)
@@ -74,6 +73,14 @@ model Membership {
   /// no token; `joinRoom` issues one lazily on the next join.
   authorToken   String?          @unique
   status        MembershipStatus @default(ACTIVE)
+  /// Last Ministry anon epoch this membership's leaf was keyed at (the signed
+  /// `minister_anon_epoch` from the id_token that last created or rotated the
+  /// leaf). A leaf REPLACEMENT (`membership.rotate`) is accepted only when the
+  /// verified token epoch STRICTLY EXCEEDS this value, then this advances to it.
+  /// That makes a legitimate Ministry re-key swap the leaf exactly once and
+  /// makes the unbounded replace-leaf-then-spam loop that defeats RLN's rate
+  /// limit impossible (audit finding C1). 0 = never keyed under an epoch.
+  anonEpoch     Int              @default(0)
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
 
@@ -92,7 +99,6 @@ model MembershipLeaf {
   room               Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
   identityCommitment String
   rateCommitment     String
-  deviceLabel        String?
   createdAt          DateTime   @default(now())
   revokedAt          DateTime?
 

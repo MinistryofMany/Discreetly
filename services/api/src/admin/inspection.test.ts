@@ -57,7 +57,6 @@ beforeAll(async () => {
       roomId,
       identityCommitment: '111222333',
       rateCommitment: '444555666',
-      deviceLabel: 'phone',
     },
   });
 });
@@ -84,7 +83,6 @@ describe('admin inspection', () => {
       const leaf = mem.leaves[0]!;
       expect(leaf.identityCommitment).toBe('111222333');
       expect(leaf.rateCommitment).toBe('444555666');
-      expect(leaf.deviceLabel).toBe('phone');
       expect(leaf.createdAt).toBeInstanceOf(Date);
     });
 
@@ -102,7 +100,6 @@ describe('admin inspection', () => {
           roomId,
           identityCommitment: '777888999',
           rateCommitment: '112233445',
-          deviceLabel: 'tablet',
           revokedAt: new Date(),
         },
       });

@@ -7,7 +7,6 @@ export const PUBLIC_ROOM_FIELDS = {
   rlnIdentifier: true,
   rateLimit: true,
   userMessageLimit: true,
-  maxDevices: true,
   visibility: true,
   persistence: true,
   encryption: true,

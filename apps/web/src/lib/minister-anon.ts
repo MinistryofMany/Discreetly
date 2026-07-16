@@ -1,90 +1,46 @@
 /**
- * CLIENT-SIDE Ministry anonymous-identity handoff (anon-identity master spec
- * 8.4 / 9.3). When Discreetly's OIDC client is anon-enabled on the Minister
- * side (OidcClient.anonAppId set), the Minister consent page appends a per-app
- * secret to the callback redirect as a URL fragment
- * (`#minister_anon=v1.<43 base64url chars>`). The fragment survives the
- * server-side 3xx hops (Auth.js `/api/auth/callback/minister` -> callbackUrl,
- * and `/api/room-auth/callback` -> `/rooms/<id>`) because browsers re-attach
- * the original fragment across redirects whose Location carries no fragment of
- * its own; it never reaches any server (fragments are not sent in HTTP).
+ * CLIENT-SIDE Ministry anonymous-identity handoff.
  *
- * This module:
+ * Ministry derives a per-app secret (the "branch" of the user's one-root
+ * identity tree) and delivers it to Discreetly's OIDC callback landing page as a
+ * URL fragment (`#minister_anon=v1.<43 base64url chars>` = 32 bytes). The
+ * fragment survives the server-side 3xx hops and never reaches any server
+ * (fragments are not sent in HTTP). This module:
  *
  *   1. CAPTURES + SCRUBS the fragment synchronously at providers-module
- *      evaluation - the earliest app-controllable client-side point, before
- *      hydration, before any effect, and before any JS navigation could
- *      destroy the fragment (spec finding S3) or another script could read it
- *      out of the URL (finding S4). The scrub is a local mirror of the SDK's
- *      (history.replaceState removing ONLY the minister_anon param, preserving
- *      router state) because the SDK sits behind a lazy import and the scrub
- *      cannot wait for a chunk load.
- *   2. Asynchronously ADOPTS the captured value: fetches the signed-in user's
- *      pairwise `sub` and the operator-provisioned MINISTER_ANON_RP_MIX_SECRET
- *      from Discreetly's own server (`/api/minister-anon/rp-mix`), validates
- *      the captured value with the SDK's `extractMinisterAppSecret` (synthetic
- *      location, scrub already done), mixes the RP secret in via
- *      `deriveDeviceSeedFromMinister` (HKDF, spec 9.2), and caches the derived
- *      32-byte device seed in localStorage KEYED BY THE MINISTER SUB.
+ *      evaluation via the SDK's zero-dependency `@ministryofmany/identity/link`
+ *      entry - the earliest app-controllable point, before hydration, any
+ *      effect, or any router navigation could read or destroy it. The scrub is
+ *      the SDK's (`history.replaceState` removing only the `minister_anon`
+ *      param), not a hand-rolled mirror.
+ *   2. ADOPTS the captured branch once the session is known, keyed by the
+ *      signed-in Minister pairwise `sub`, using the SDK's `decideAnonAction`:
+ *      the signed `minister_anon_epoch` on the id_token is the SOLE authority on
+ *      whether to adopt a first branch, re-key to a new one, or do nothing. A
+ *      bare commitment mismatch NEVER triggers a re-key.
  *
- * Per-sub keying is deliberate (audit finding on the Deforum integration): a
- * single global seed slot lets a second account signing in on the same browser
- * clobber the first account's seed. Here each sub owns its own slot, and a
- * DIFFERING existing seed in the same slot is never overwritten (the cached
- * identity keeps working; a difference means the mix secret or the Ministry
- * seed changed - a fork event that must be surfaced, not silently adopted).
- *
- * The cached device seed feeds the EXISTING identity chain unchanged:
- * `identity-context` `create()` reads it (via `readMinisterDeviceSeed`) and
- * derives the same v3 (trapdoor, nullifier) identity `createIdentity()` would
- * otherwise draw at random - see `deriveIdentityFromDeviceSeed` in
- * `identity.ts`. Everything downstream (encryption at rest, join, RLN proofs,
- * backups) is untouched.
- *
- * FAIL-CLOSED everywhere (spec 8.3): no fragment, a malformed fragment, a
- * signed-out landing, an unset/short mix secret, or any error leaves existing
- * behavior byte-identical (no network call is made unless a fragment actually
- * arrived). Login always succeeds; only the anonymous identity fails to
- * derive, and that fallback is SIGNALED (toast + console.warn), never silent.
- * Nothing here (per-app secret, mix secret, device seed) ever leaves the
- * browser; only the mixed device seed is cached, never the raw per-app secret
- * (spec 9.3). Secret buffers are zeroized (`fill(0)`) as soon as they are no
- * longer needed.
+ * Per-sub keying: each account owns its own branch slot, so a second account
+ * signing in on the same browser cannot clobber the first's. The branch is the
+ * user's per-app secret; it and everything derived from it stay browser-local -
+ * sending any of it to a server (Discreetly's included) is an integration bug.
+ * There is no mix secret and no `/api/minister-anon/*` round trip: the sub the
+ * cache is keyed by comes from `useSession()`, which already has it.
  */
 import { toast } from 'sonner';
+import { extractMinisterAppSecret, decideAnonAction } from '@ministryofmany/identity/link';
 
-/** Mirrors MINISTER_ANON_PARAM in @ministryofmany/identity - duplicated because
- *  the capture phase must run synchronously, before the lazy SDK import. */
-const PARAM = 'minister_anon';
+/** Per-sub localStorage key prefix for the cached branch + its enrolled epoch. */
+const BRANCH_KEY_PREFIX = 'discreetly.minister.branch.v1:';
 
-/** Minimum mix-secret length in bytes (spec 9.2; mirrors RP_MIX_SECRET_MIN_BYTES). */
-const MIX_MIN_BYTES = 32;
-
-/** Per-sub localStorage key prefix for the cached (mixed) device seed. */
-const SEED_KEY_PREFIX = 'discreetly.minister.deviceSeed.v1:';
-
+/** The 32-byte per-app secret captured from the fragment this document load. */
+let capturedBranch: Uint8Array | null = null;
 let captured = false;
-let pending: Promise<void> | null = null;
 
-/**
- * Resolves when any in-flight Minister seed adoption has settled (immediately
- * when none is in flight). Never rejects. `identity-context` awaits this
- * before reading the seed cache so a just-captured handoff can never race an
- * identity creation into the random fallback.
- */
-export function ministerAnonSettled(): Promise<void> {
-  return pending ?? Promise.resolve();
-}
-
-// --- small local codecs (kept dependency-free for the synchronous boot path) ---
-
-function hexToBytes(hex: string): Uint8Array | null {
-  if (!/^[0-9a-fA-F]+$/.test(hex) || hex.length % 2 !== 0) return null;
-  const out = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < out.length; i++) {
-    out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-  }
-  return out;
+interface StoredBranch {
+  /** base64 of the 32-byte branch. */
+  b: string;
+  /** The signed `minister_anon_epoch` this branch was keyed at. */
+  e: number;
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -105,169 +61,122 @@ function base64ToBytes(b64: string): Uint8Array | null {
   return out;
 }
 
+function branchKey(sub: string): string {
+  return BRANCH_KEY_PREFIX + sub;
+}
+
+function readStored(sub: string): StoredBranch | null {
+  if (typeof localStorage === 'undefined') return null;
+  const raw = localStorage.getItem(branchKey(sub));
+  if (raw === null) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<StoredBranch>;
+    if (typeof parsed.b === 'string' && typeof parsed.e === 'number') {
+      return { b: parsed.b, e: parsed.e };
+    }
+  } catch {
+    // Corrupt slot -> treat as absent (fail-closed; a fresh handoff re-keys).
+  }
+  return null;
+}
+
 /**
- * A fragment ARRIVED but no anonymous identity could be derived: fail closed
- * to existing behavior, and say so - silently falling back would let the user
- * believe their identity is Ministry-recoverable when it is not. Static
- * strings only; no secret material can land in logs or toasts.
+ * A fragment ARRIVED but no anonymous identity could be adopted: fail closed to
+ * existing behavior, and say so - silently falling back would let the user
+ * believe their identity is Ministry-derived when it is not. Static strings
+ * only; no secret material can land in logs or toasts.
  */
 function fallbackSignal(reason: string, error?: unknown): void {
   console.warn(
-    `minister-anon: a minister_anon fragment arrived but no anonymous identity was derived (${reason}); ` +
-      'falling back to existing local-identity behavior (fail-closed)',
+    `minister-anon: a minister_anon fragment arrived but no anonymous identity was adopted (${reason}); ` +
+      'falling back to existing behavior (fail-closed)',
     ...(error === undefined ? [] : [error]),
   );
   toast.warning(
     'Your Ministry anonymous identity could not be set up on this device. ' +
-      'Sign-in still works; any identity you create here is local-only (not recoverable via Ministry).',
+      'Sign-in still works; you may need to sign in again to derive it.',
   );
 }
 
-async function adopt(raw: string): Promise<void> {
-  // 1. Who is signed in, and the operator mix secret - from Discreetly's own
-  //    server, per request (never baked into the public bundle, spec 9.2).
-  let sub: string | null = null;
-  let mixHex: string | null = null;
-  try {
-    const res = await fetch('/api/minister-anon/rp-mix', { cache: 'no-store' });
-    if (res.ok) {
-      const body = (await res.json()) as { sub?: unknown; mixSecret?: unknown };
-      sub = typeof body.sub === 'string' && body.sub.length > 0 ? body.sub : null;
-      mixHex = typeof body.mixSecret === 'string' ? body.mixSecret : null;
-    }
-  } catch (error) {
-    fallbackSignal('mix-secret fetch failed', error);
-    return;
-  }
-  if (sub === null) {
-    // No session sub -> nothing to key the seed cache by. (A fragment normally
-    // lands right after sign-in, so this indicates a broken session.)
-    fallbackSignal('no signed-in session');
-    return;
-  }
-  const mix = mixHex === null ? null : hexToBytes(mixHex);
-  if (mix === null || mix.byteLength < MIX_MIN_BYTES) {
-    // Operator misconfiguration: MINISTER_ANON_RP_MIX_SECRET unset, malformed,
-    // or shorter than 32 bytes (the server also warns in its own logs).
-    fallbackSignal('MINISTER_ANON_RP_MIX_SECRET unset or shorter than 32 bytes');
-    return;
-  }
-
-  // 2. Validate + mix. The SDK re-validates the captured value via a synthetic
-  //    location (the real URL was already scrubbed), so grammar + decoding stay
-  //    in the SDK; Discreetly never re-implements them.
-  const { extractMinisterAppSecret, deriveDeviceSeedFromMinister } =
-    await import('@ministryofmany/identity');
-  const synthetic = new URLSearchParams();
-  synthetic.set(PARAM, raw);
-  const appSecret = extractMinisterAppSecret({
-    location: { pathname: '', search: '', hash: `#${synthetic.toString()}` },
-    scrub: false,
-  });
-  if (appSecret === null) {
-    mix.fill(0);
-    fallbackSignal('malformed or unknown-version fragment');
-    return;
-  }
-  let seed: Uint8Array;
-  try {
-    seed = await deriveDeviceSeedFromMinister(appSecret, mix);
-  } finally {
-    appSecret.fill(0);
-    mix.fill(0);
-  }
-
-  // 3. Cache the mixed device seed, keyed by the Minister sub. Non-destructive:
-  //    a DIFFERING existing seed for the same sub is kept (it is the identity
-  //    this device already uses); other subs' slots are never touched.
-  try {
-    const key = SEED_KEY_PREFIX + sub;
-    const next = bytesToBase64(seed);
-    const existing = localStorage.getItem(key);
-    if (existing === null) {
-      localStorage.setItem(key, next);
-    } else if (existing !== next) {
-      console.warn(
-        'minister-anon: the freshly derived device seed differs from the one cached for this ' +
-          'account; KEEPING the existing seed (the identity this device already uses). A ' +
-          'difference means MINISTER_ANON_RP_MIX_SECRET changed or the Ministry seed was reset - ' +
-          'both fork the derived identity (spec invariant I9).',
-      );
-      toast.warning(
-        'This device already holds a different anonymous identity for your account; keeping the existing one.',
-      );
-    }
-    // equal: deterministic re-derivation, nothing to do.
-  } finally {
-    seed.fill(0);
-  }
-}
-
 /**
- * Capture + scrub a Ministry anon-identity fragment. MUST be the first
- * client-side act: called at module scope of `providers.tsx`, which evaluates
- * before hydration and therefore before any effect or router navigation (spec
- * finding S3). Idempotent per document load; a fragment only arrives on a
- * full-document navigation (the OIDC callback redirect chain), which always
- * re-evaluates the module, so once per load is correct.
+ * Capture + scrub a Ministry anon-identity fragment via the SDK. MUST be the
+ * first client-side act: called at module scope of `providers.tsx`, which
+ * evaluates before hydration and therefore before any effect or router
+ * navigation. Idempotent per document load. No fragment present -> a pure no-op
+ * (existing behavior byte-identical).
  *
- * The heavy work (session/mix fetch, SDK import, HKDF) runs async after the
- * synchronous scrub; `ministerAnonSettled()` exposes its completion. When no
- * fragment is present this is a pure no-op: no fetch, no storage access -
- * existing behavior byte-identical.
+ * The SDK's `extractMinisterAppSecret` reads `globalThis.location`, scrubs the
+ * `minister_anon` param from the URL/history, and returns the 32-byte branch (or
+ * null for an absent/malformed/unknown-version fragment). It THROWS only if the
+ * scrub itself is impossible (no `history.replaceState`); this runs at module
+ * scope, so we fail closed on the anon identity rather than break app boot.
  */
 export function captureMinisterAnonFragment(): void {
   if (typeof window === 'undefined' || captured) return;
   captured = true;
-  const hash = window.location.hash;
-  if (hash === '' || hash === '#') return;
-
-  const params = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash);
-  const raw = params.get(PARAM);
-  if (raw === null) return;
-
-  // Scrub BEFORE validating (mirrors the SDK): even a malformed value is
-  // secret-shaped material that must not linger in the URL or the tab's
-  // history entry. Only the minister_anon param is removed; other fragment
-  // params and router/history state are preserved. This runs at module scope
-  // of providers.tsx, so a thrown error here would break app boot for EVERY
-  // user - if the scrub itself fails (no usable history.replaceState), fail
-  // closed on the anon identity instead: warn and do NOT adopt (never derive
-  // from a secret still sitting in the URL).
-  params.delete(PARAM);
-  const rest = params.toString();
   try {
-    window.history.replaceState(
-      window.history.state ?? null,
-      '',
-      window.location.pathname + window.location.search + (rest ? `#${rest}` : ''),
-    );
+    capturedBranch = extractMinisterAppSecret();
   } catch (error) {
+    // Scrub impossible: never derive from a secret still in the URL.
+    capturedBranch = null;
     fallbackSignal('could not scrub the fragment from the URL', error);
-    return;
   }
-
-  pending = adopt(raw).catch((error: unknown) => {
-    // Fail closed on ANY error (SDK chunk-load failure, WebCrypto absence,
-    // storage rejection): existing behavior stands, login is unaffected. SDK
-    // error messages are static - no secret material can land in logs.
-    fallbackSignal('derivation failed', error);
-  });
 }
 
 /**
- * The cached Ministry-derived device seed for `sub`, or null when absent or
- * unreadable (fail-closed). Returns a fresh buffer; the CALLER must `fill(0)`
- * it after use.
+ * Adopt the captured branch for `sub`, gated on the signed `tokenEpoch`. Called
+ * from the identity context once the session (sub + id_token epoch) is known.
+ * The SDK's `decideAnonAction` decides adopt / rekey / none; only adopt and
+ * rekey write, and only when the epoch strictly advances past the stored one.
+ * Idempotent: consumes and zeroizes the captured branch, so re-calls are no-ops.
  */
-export function readMinisterDeviceSeed(sub: string): Uint8Array | null {
-  if (typeof localStorage === 'undefined') return null;
-  const raw = localStorage.getItem(SEED_KEY_PREFIX + sub);
-  if (raw === null) return null;
-  const bytes = base64ToBytes(raw);
+export function adoptMinisterBranch(sub: string, tokenEpoch: number | undefined): void {
+  if (capturedBranch === null) return;
+  const stored = readStored(sub);
+  const action = decideAnonAction({
+    branch: capturedBranch,
+    tokenEpoch,
+    storedEpoch: stored?.e,
+  });
+  try {
+    if (action.action === 'adopt' || action.action === 'rekey') {
+      const next: StoredBranch = { b: bytesToBase64(action.branch), e: action.epoch };
+      try {
+        localStorage.setItem(branchKey(sub), JSON.stringify(next));
+      } catch (error) {
+        fallbackSignal('could not persist the branch (storage rejected)', error);
+      }
+    } else if (tokenEpoch === undefined && stored === null) {
+      // A branch arrived but the id_token carried no epoch to key on and nothing
+      // is stored: fail closed loudly rather than silently drop it.
+      fallbackSignal('id_token carried no minister_anon_epoch');
+    }
+    // 'none' with an existing stored branch: already keyed at this epoch (or a
+    // stale token). Keep the stored identity; nothing to do.
+  } finally {
+    // The captured branch is consumed; zeroize it and prevent reprocessing.
+    capturedBranch.fill(0);
+    capturedBranch = null;
+  }
+}
+
+/** True if a Ministry branch is cached for `sub`. */
+export function hasMinisterBranch(sub: string): boolean {
+  return readStored(sub) !== null;
+}
+
+/**
+ * The cached Ministry branch (per-app secret) for `sub`, or null when absent or
+ * unreadable (fail-closed). Returns a fresh buffer; the CALLER must `fill(0)` it
+ * after use.
+ */
+export function readMinisterBranch(sub: string): Uint8Array | null {
+  const stored = readStored(sub);
+  if (stored === null) return null;
+  const bytes = base64ToBytes(stored.b);
   if (bytes === null || bytes.byteLength !== 32) {
     console.warn(
-      'minister-anon: cached device seed for this account is unreadable; ignoring it (fail-closed)',
+      'minister-anon: cached branch for this account is unreadable; ignoring it (fail-closed)',
     );
     return null;
   }

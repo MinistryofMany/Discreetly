@@ -10,7 +10,7 @@ export default function IdentityPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Your identity</h1>
           <p className="text-sm text-muted-foreground">
-            Create, unlock, back up, and manage your anonymous identity.
+            Your anonymous identity, derived from your Ministry account.
           </p>
         </div>
         <Button asChild variant="outline">
@@ -20,8 +20,9 @@ export default function IdentityPage() {
       <IdentityPanel />
       <MinisterSub className="mt-6 rounded-md border bg-card p-4" />
       <p className="mt-6 text-xs text-muted-foreground">
-        To use the same identity on another device, export a backup here and
-        import it there. Per-room device rotation is available from each room.
+        To use the same identity on another device, sign in there with the same
+        Ministry account - your identity is derived from it automatically, with
+        nothing to export or import.
       </p>
     </div>
   );

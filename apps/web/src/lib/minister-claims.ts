@@ -5,6 +5,13 @@ export interface MinisterDisplayClaims {
   name: string | null;
   picture: string | null;
   ministerBadges: string[];
+  /**
+   * The signed `minister_anon_epoch` (integer >= 1), or null when absent. Drives
+   * the client-side anon-branch adopt/rekey decision (`minister-anon.ts`); the
+   * API independently re-reads it from the verified token for the authoritative
+   * epoch-gated leaf write (audit finding C1).
+   */
+  anonEpoch: number | null;
 }
 
 const EMPTY: MinisterDisplayClaims = {
@@ -12,6 +19,7 @@ const EMPTY: MinisterDisplayClaims = {
   name: null,
   picture: null,
   ministerBadges: [],
+  anonEpoch: null,
 };
 
 /**
@@ -46,7 +54,9 @@ export function decodeMinisterClaims(idToken: string | null): MinisterDisplayCla
       name?: unknown;
       picture?: unknown;
       minister_badges?: unknown;
+      minister_anon_epoch?: unknown;
     };
+    const rawEpoch = p.minister_anon_epoch;
     return {
       sub: typeof p.sub === 'string' ? p.sub : null,
       name: typeof p.name === 'string' ? p.name : null,
@@ -54,6 +64,10 @@ export function decodeMinisterClaims(idToken: string | null): MinisterDisplayCla
       ministerBadges: Array.isArray(p.minister_badges)
         ? p.minister_badges.filter((x): x is string => typeof x === 'string')
         : [],
+      anonEpoch:
+        typeof rawEpoch === 'number' && Number.isInteger(rawEpoch) && rawEpoch >= 1
+          ? rawEpoch
+          : null,
     };
   } catch {
     return EMPTY;

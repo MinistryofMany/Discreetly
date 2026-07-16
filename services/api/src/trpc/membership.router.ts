@@ -12,7 +12,6 @@ export const membershipRouter = router({
         roomId: z.string(),
         idToken: z.string(),
         identityCommitment: z.string(),
-        deviceLabel: z.string().max(100).optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
@@ -49,23 +48,28 @@ export const membershipRouter = router({
         room,
         joinNullifier: gate.joinNullifier.toString(),
         identityCommitment: input.identityCommitment,
-        deviceLabel: input.deviceLabel,
+        tokenEpoch: gate.tokenEpoch,
       });
     }),
+  // Re-key this membership's leaf to a freshly-derived commitment (a Ministry
+  // re-key). The server resolves the membership from the verified pairwise sub,
+  // so the client supplies NO old commitment; the write is gated on the signed
+  // id_token epoch strictly advancing (audit finding C1 - see rotateDevice).
   rotate: publicProcedure
     .input(
       z.object({
         roomId: z.string(),
         idToken: z.string(),
-        oldIdentityCommitment: z.string(),
         newIdentityCommitment: z.string(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
       const room = await prisma.room.findUnique({ where: { id: input.roomId } });
       if (!room) return { ok: false as const, reason: 'no-room' as const };
-      // Admission uses the same inline token-only evaluation as join: rotation
-      // re-presents a per-room token whose badges must satisfy the policy.
+      // The policy gate runs BEFORE the leaf write, exactly as in `join`: a
+      // rotation re-presents a per-room token whose badges must still satisfy
+      // the policy. `evaluateGate` also surfaces the verified `tokenEpoch` that
+      // authorizes the epoch-gated write below.
       const gate = await evaluateGate({
         idToken: input.idToken,
         rlnIdentifier: BigInt(room.rlnIdentifier),
@@ -76,8 +80,8 @@ export const membershipRouter = router({
       return rotateDevice({
         room,
         joinNullifier: gate.joinNullifier.toString(),
-        oldIdentityCommitment: input.oldIdentityCommitment,
         newIdentityCommitment: input.newIdentityCommitment,
+        tokenEpoch: gate.tokenEpoch,
       });
     }),
 });

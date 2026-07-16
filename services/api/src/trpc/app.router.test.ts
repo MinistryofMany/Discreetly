@@ -48,7 +48,6 @@ describe('membership.join via tRPC', () => {
       roomId,
       idToken,
       identityCommitment: '12345',
-      deviceLabel: 'phone',
     });
     expect(res.ok).toBe(true);
     const leaves = await caller.room.leaves({ id: roomId });

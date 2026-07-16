@@ -38,7 +38,6 @@ beforeAll(async () => {
       rlnIdentifier: `${Date.now()}${Math.floor(Math.random() * 1_000_000)}`,
       rateLimit: 10_000,
       userMessageLimit: 5,
-      maxDevices: 2,
       // Open policy so the join gate admits any verified identity.
       accessPolicy: { allOf: [] },
     },

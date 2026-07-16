@@ -19,10 +19,16 @@ function generateAuthorToken(): string {
 }
 
 export interface JoinArgs {
-  room: Pick<Room, 'id' | 'rlnIdentifier' | 'userMessageLimit' | 'maxDevices'>;
+  room: Pick<Room, 'id' | 'rlnIdentifier' | 'userMessageLimit'>;
   joinNullifier: string;
   identityCommitment: string;
-  deviceLabel?: string;
+  /**
+   * The verified `minister_anon_epoch` from the joiner's id_token (undefined
+   * when the token carries no epoch claim). Stamped onto the membership as the
+   * initial `anonEpoch` when this join creates the leaf, so a later
+   * `rotateDevice` must present a STRICTLY greater epoch (audit finding C1).
+   */
+  tokenEpoch?: number;
   /**
    * Run inside this existing interactive transaction so the caller can compose
    * the join atomically with other writes. Omit to open a fresh one.
@@ -55,6 +61,9 @@ export async function joinRoom(args: JoinArgs): Promise<JoinResult> {
         roomId: args.room.id,
         joinNullifier: args.joinNullifier,
         authorToken: generateAuthorToken(),
+        // First key for this membership: stamp the id_token epoch so a later
+        // rotate must strictly exceed it (C1). Absent-epoch tokens start at 0.
+        anonEpoch: args.tokenEpoch ?? 0,
       },
       update: {},
     });
@@ -90,11 +99,17 @@ export async function joinRoom(args: JoinArgs): Promise<JoinResult> {
     });
     if (existing) return { ok: false as const, reason: 'already-on-device' as const };
 
+    // One leaf per membership, hardcoded (D-2): the old per-device `maxDevices`
+    // was a rate-limit multiplier in the clear - each extra leaf is a disjoint
+    // RLN nullifier stream, so N leaves = N× the advertised message rate. Every
+    // device of a user now derives the SAME per-room commitment, so a legitimate
+    // second device lands on `already-on-device` above; a DIFFERENT commitment
+    // while a leaf exists is a re-key and must go through `rotateDevice` (epoch
+    // gated), never a second leaf here.
     const activeLeaves = await tx.membershipLeaf.count({
       where: { membershipId: membership.id, revokedAt: null },
     });
-    if (activeLeaves >= args.room.maxDevices)
-      return { ok: false as const, reason: 'device-limit' as const };
+    if (activeLeaves >= 1) return { ok: false as const, reason: 'device-limit' as const };
 
     const leaf = await tx.membershipLeaf.create({
       data: {
@@ -102,7 +117,6 @@ export async function joinRoom(args: JoinArgs): Promise<JoinResult> {
         roomId: args.room.id,
         identityCommitment: args.identityCommitment,
         rateCommitment,
-        deviceLabel: args.deviceLabel,
       },
     });
     return {
@@ -122,17 +136,37 @@ export async function joinRoom(args: JoinArgs): Promise<JoinResult> {
 export interface RotateArgs {
   room: Pick<Room, 'id' | 'userMessageLimit'>;
   joinNullifier: string;
-  oldIdentityCommitment: string;
   newIdentityCommitment: string;
+  /**
+   * The verified `minister_anon_epoch` from the id_token authorizing the
+   * rotation. The write is accepted ONLY when this STRICTLY exceeds the
+   * membership's stored `anonEpoch` (audit finding C1). Undefined (no epoch
+   * claim) is refused: a leaf can never be replaced without an authenticated
+   * epoch to advance past.
+   */
+  tokenEpoch?: number;
 }
 
 export type RotateResult =
   | { ok: true; rateCommitment: string }
-  | { ok: false; reason: 'banned' | 'no-membership' | 'old-leaf-not-found' | 'new-leaf-exists' };
+  | {
+      ok: false;
+      reason: 'banned' | 'no-membership' | 'no-leaf' | 'new-leaf-exists' | 'stale-epoch';
+    };
 
-/** Replace one device leaf's identity commitment (RLN-secret rotation). */
+/**
+ * Replace this membership's single leaf with a new identity commitment
+ * (a Ministry re-key). The membership is resolved SERVER-SIDE from the verified
+ * pairwise sub (via `joinNullifier`) - the caller never supplies its old
+ * commitment - and the swap is gated on the signed id_token epoch STRICTLY
+ * ADVANCING past the last-keyed epoch. That is the whole of finding C1: without
+ * it, `rotate` is an ungated, unlimited leaf-replacement primitive, and a client
+ * can loop "replace my leaf, send N messages, replace again" for unbounded
+ * messages, defeating RLN's per-identity-per-epoch rate limit. With it, a
+ * replacement requires Ministry to bump the epoch (a cooldowned, AAL2-gated
+ * re-key), so the loop is impossible.
+ */
 export async function rotateDevice(args: RotateArgs): Promise<RotateResult> {
-  const oldRc = rateCommitmentFor(args.oldIdentityCommitment, args.room.userMessageLimit);
   const newRc = rateCommitmentFor(args.newIdentityCommitment, args.room.userMessageLimit);
   return prisma.$transaction(async (tx) => {
     const membership = await tx.membership.findUnique({
@@ -142,11 +176,18 @@ export async function rotateDevice(args: RotateArgs): Promise<RotateResult> {
     if (membership.status === MembershipStatus.BANNED)
       return { ok: false as const, reason: 'banned' as const };
 
-    const old = await tx.membershipLeaf.findUnique({
-      where: { roomId_rateCommitment: { roomId: args.room.id, rateCommitment: oldRc } },
+    // C1: the epoch must strictly advance. An equal-or-lower epoch (a stale or
+    // replayed token, or a loop attempt) is refused with NO write. An absent
+    // epoch cannot advance anything, so it is refused too.
+    if (args.tokenEpoch === undefined || args.tokenEpoch <= membership.anonEpoch)
+      return { ok: false as const, reason: 'stale-epoch' as const };
+
+    // Resolve THE membership's active leaf (one per membership, D-2) from the
+    // sub-derived membership alone; the client supplies no old commitment.
+    const old = await tx.membershipLeaf.findFirst({
+      where: { membershipId: membership.id, revokedAt: null },
     });
-    if (!old || old.membershipId !== membership.id)
-      return { ok: false as const, reason: 'old-leaf-not-found' as const };
+    if (!old) return { ok: false as const, reason: 'no-leaf' as const };
 
     const collision = await tx.membershipLeaf.findUnique({
       where: { roomId_rateCommitment: { roomId: args.room.id, rateCommitment: newRc } },
@@ -157,6 +198,10 @@ export async function rotateDevice(args: RotateArgs): Promise<RotateResult> {
     await tx.membershipLeaf.update({
       where: { id: old.id },
       data: { identityCommitment: args.newIdentityCommitment, rateCommitment: newRc },
+    });
+    await tx.membership.update({
+      where: { id: membership.id },
+      data: { anonEpoch: args.tokenEpoch },
     });
     return { ok: true as const, rateCommitment: newRc };
   });

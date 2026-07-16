@@ -10,7 +10,7 @@ const RATE_LIMIT = 1_000_000;
 const ctx = makeProofCtx(556677n, 1n);
 const epoch = BigInt(Math.floor(Date.now() / RATE_LIMIT));
 const JOIN_NULLIFIER = 'eph-jn';
-let room: { id: string; rlnIdentifier: string; userMessageLimit: number; maxDevices: number };
+let room: { id: string; rlnIdentifier: string; userMessageLimit: number };
 
 beforeAll(async () => {
   const r = await prisma.room.create({
@@ -20,7 +20,6 @@ beforeAll(async () => {
       rlnIdentifier: `${ctx.rlnIdentifier}`,
       rateLimit: RATE_LIMIT,
       userMessageLimit: 1,
-      maxDevices: 5,
       persistence: 'EPHEMERAL',
       accessPolicy: { badge: { type: 'x' } },
     },
@@ -29,7 +28,6 @@ beforeAll(async () => {
     id: r.id,
     rlnIdentifier: r.rlnIdentifier,
     userMessageLimit: r.userMessageLimit,
-    maxDevices: r.maxDevices,
   };
   await joinRoom({
     room,

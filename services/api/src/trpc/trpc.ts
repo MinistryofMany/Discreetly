@@ -1,8 +1,8 @@
 import { initTRPC, TRPCError } from '@trpc/server';
-import type { VerifiedIdentity } from '../minister/verify.js';
+import type { VerifiedIdentityWithEpoch } from '../minister/verify.js';
 import { formatTrpcError } from './error-formatter.js';
 
-export type VerifyFn = (idToken: string) => Promise<VerifiedIdentity>;
+export type VerifyFn = (idToken: string) => Promise<VerifiedIdentityWithEpoch>;
 
 export interface Context {
   verify: VerifyFn;

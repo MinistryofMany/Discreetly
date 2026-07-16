@@ -84,6 +84,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       session.name = claims.name;
       session.picture = claims.picture;
       session.ministerBadges = claims.ministerBadges;
+      session.anonEpoch = claims.anonEpoch;
       return session;
     },
   },
@@ -96,5 +97,6 @@ declare module 'next-auth' {
     name: string | null;
     picture: string | null;
     ministerBadges: string[];
+    anonEpoch: number | null;
   }
 }

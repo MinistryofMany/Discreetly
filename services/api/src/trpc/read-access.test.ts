@@ -88,7 +88,7 @@ describe('read access control', () => {
     // Seat the membership directly (bypassing gate policy check since the room policy is empty)
     const room = await prisma.room.findUniqueOrThrow({
       where: { id: privateRoomId },
-      select: { id: true, rlnIdentifier: true, userMessageLimit: true, maxDevices: true },
+      select: { id: true, rlnIdentifier: true, userMessageLimit: true },
     });
     await joinRoom({ room, joinNullifier: jn, identityCommitment: '99999' });
 
@@ -115,7 +115,7 @@ describe('read access control', () => {
     const jn = joinNullifier(sub, BigInt(RLN_PRIVATE)).toString();
     const room = await prisma.room.findUniqueOrThrow({
       where: { id: privateRoomId },
-      select: { id: true, rlnIdentifier: true, userMessageLimit: true, maxDevices: true },
+      select: { id: true, rlnIdentifier: true, userMessageLimit: true },
     });
     await joinRoom({ room, joinNullifier: jn, identityCommitment: '88888' });
     const token = await signIdToken({ sub });

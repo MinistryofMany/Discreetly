@@ -23,7 +23,6 @@ interface CreateRoomData {
   description?: string;
   rateLimit: number;
   userMessageLimit: number;
-  maxDevices?: number;
   visibility?: 'PUBLIC' | 'PRIVATE';
   persistence?: 'PERSISTENT' | 'EPHEMERAL';
   encryption?: 'PLAINTEXT' | 'AES';
@@ -50,7 +49,6 @@ async function createRoomRow(input: CreateRoomData) {
           rlnIdentifier,
           rateLimit: input.rateLimit,
           userMessageLimit: input.userMessageLimit,
-          ...(input.maxDevices !== undefined && { maxDevices: input.maxDevices }),
           ...(input.visibility !== undefined && { visibility: input.visibility }),
           ...(input.persistence !== undefined && { persistence: input.persistence }),
           ...(input.encryption !== undefined && { encryption: input.encryption }),
@@ -114,7 +112,6 @@ const roomAdminRouter = router({
         description: z.string().max(2000).optional(),
         rateLimit: z.number().int().positive(),
         userMessageLimit: z.number().int().positive(),
-        maxDevices: z.number().int().positive().optional(),
         visibility: z.enum(['PUBLIC', 'PRIVATE']).optional(),
         persistence: z.enum(['PERSISTENT', 'EPHEMERAL']).optional(),
         encryption: z.enum(['PLAINTEXT', 'AES']).optional(),
@@ -147,7 +144,6 @@ const roomAdminRouter = router({
         description: input.description,
         rateLimit: input.rateLimit,
         userMessageLimit: input.userMessageLimit,
-        maxDevices: input.maxDevices,
         visibility: input.visibility,
         persistence: input.persistence,
         encryption: input.encryption,
@@ -215,7 +211,6 @@ const roomAdminRouter = router({
         description: z.string().max(2000).optional(),
         rateLimit: z.number().int().positive().optional(),
         userMessageLimit: z.number().int().positive().optional(),
-        maxDevices: z.number().int().positive().optional(),
         visibility: z.enum(['PUBLIC', 'PRIVATE']).optional(),
         persistence: z.enum(['PERSISTENT', 'EPHEMERAL']).optional(),
         encryption: z.enum(['PLAINTEXT', 'AES']).optional(),
@@ -280,7 +275,6 @@ const roomAdminRouter = router({
           ...(input.description !== undefined && { description: input.description }),
           ...(input.rateLimit !== undefined && { rateLimit: input.rateLimit }),
           ...(input.userMessageLimit !== undefined && { userMessageLimit: input.userMessageLimit }),
-          ...(input.maxDevices !== undefined && { maxDevices: input.maxDevices }),
           ...(input.visibility !== undefined && { visibility: input.visibility }),
           ...(input.persistence !== undefined && { persistence: input.persistence }),
           ...(input.encryption !== undefined && { encryption: input.encryption }),
@@ -345,7 +339,6 @@ const roomAdminRouter = router({
           select: {
             identityCommitment: true,
             rateCommitment: true,
-            deviceLabel: true,
             createdAt: true,
           },
         },
