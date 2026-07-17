@@ -9,7 +9,7 @@
  * delivered - reusing the app's own `deriveRoomIdentity` so the derivation can
  * never drift from what the browser did.
  */
-import { createTRPCClient, httpLink } from '@trpc/client';
+import { createTRPCClient, httpBatchLink } from '@trpc/client';
 import type { AppRouter } from '@discreetly/api';
 import { deriveRoomIdentity } from '../../src/lib/identity.js';
 import { branchForSub, subFor } from '../mock-oidc/issuer.js';
@@ -59,6 +59,14 @@ export async function rotateMembership(input: {
   idToken: string;
   newIdentityCommitment: string;
 }): Promise<{ ok: boolean; reason?: string; rateCommitment?: string }> {
-  const client = createTRPCClient<AppRouter>({ links: [httpLink({ url: API_URL })] });
+  // Mirror the shipped app's link config (apps/web/src/lib/trpc.ts): the API's
+  // standalone tRPC server is created for the batch wire protocol
+  // (`allowMethodOverride: true`), so a plain `httpLink` posts a shape the server
+  // routes to an empty procedure path ("No procedure found on path ''"). Use
+  // `httpBatchLink` + `methodOverride: 'POST'` against the same `API_URL` the app
+  // posts to (`NEXT_PUBLIC_API_URL`, the tRPC root).
+  const client = createTRPCClient<AppRouter>({
+    links: [httpBatchLink({ url: API_URL, methodOverride: 'POST' })],
+  });
   return client.membership.rotate.mutate(input);
 }
