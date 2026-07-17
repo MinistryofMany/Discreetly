@@ -1,90 +1,53 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import { signIn, resetData, subFor } from './harness/helpers.js';
 
-const PASSWORD = 'correct horse battery staple';
+/**
+ * The identity panel is now READ-ONLY. There is no password vault and no
+ * create/unlock/export/import/rotate/remove UI: the anonymous identity is DERIVED
+ * per room from the Ministry `#minister_anon` branch delivered at sign-in (see
+ * `apps/web/src/lib/identity.ts`). The panel only reports whether that branch is
+ * present on this device; the operator sub is shown so it can be allowlisted.
+ */
+test.beforeAll(async () => {
+  await resetData();
+});
 
-// The identity commitment is masked by default behind a Reveal toggle; click it
-// (when present) so the digits render before we read or compare them.
-async function revealCommitment(page: Page): Promise<void> {
-  const reveal = page.getByRole('button', { name: /^reveal$/i });
-  if (await reveal.isVisible().catch(() => false)) await reveal.click();
-}
+test('identity panel: reports "Not set up" when signed out', async ({ page }) => {
+  await page.goto('/identity');
 
-test.describe('identity panel', () => {
-  test('create, lock, wrong-password reject, unlock', async ({ page }) => {
-    await page.goto('/identity');
+  await expect(page.getByRole('heading', { name: /your identity/i })).toBeVisible();
+  await expect(page.getByText('Not set up', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(/sign in with minister to set up your anonymous identity/i),
+  ).toBeVisible();
 
-    // Create (the panel requires a matching confirmation before minting).
-    await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
-    await page.getByLabel('Confirm password', { exact: true }).fill(PASSWORD);
-    await page.getByRole('button', { name: /^create identity$/i }).click();
-    await expect(page.getByText('Unlocked', { exact: true })).toBeVisible();
-    await revealCommitment(page);
-    const commitment = await page.locator('text=commitment:').innerText();
-    expect(commitment).toMatch(/commitment: \d+/);
+  // No vault affordances survive: no create/unlock/export/import controls.
+  await expect(page.getByRole('button', { name: /create identity/i })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^unlock$/i })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /export backup/i })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /import backup/i })).toHaveCount(0);
+});
 
-    // Lock -> stored, locked state.
-    await page.getByRole('button', { name: /^lock$/i }).click();
-    await expect(page.getByText(/an encrypted identity is stored on this device/i)).toBeVisible();
+test('identity panel: reports "Ready" and surfaces the operator sub once signed in', async ({
+  page,
+}) => {
+  const email = 'panel@example.com';
+  const sub = await signIn(page, { email, name: 'Panel' });
+  expect(sub).toBe(subFor(email));
 
-    // Wrong password is rejected (sonner toast, stays locked).
-    await page.getByLabel('Password', { exact: true }).fill('wrong-password');
-    await page.getByRole('button', { name: /^unlock$/i }).click();
-    await expect(page.getByText(/incorrect password|wrong password/i)).toBeVisible();
-    await expect(page.getByText('Unlocked', { exact: true })).toBeHidden();
+  await page.goto('/identity');
 
-    // Correct password unlocks and restores the same commitment.
-    await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
-    await page.getByRole('button', { name: /^unlock$/i }).click();
-    await expect(page.getByText('Unlocked', { exact: true })).toBeVisible();
-    await revealCommitment(page);
-    await expect(page.locator('text=commitment:')).toHaveText(commitment);
-  });
+  // The branch was captured at sign-in and adopted: the panel is "Ready" (the
+  // identity derives automatically per room, nothing to back up here).
+  await expect(page.getByText('Ready', { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/rooms derive their identity automatically/i)).toBeVisible();
 
-  test('export backup downloads, import restores, remove clears', async ({ page, context }) => {
-    await page.goto('/identity');
-    await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
-    await page.getByLabel('Confirm password', { exact: true }).fill(PASSWORD);
-    await page.getByRole('button', { name: /^create identity$/i }).click();
-    await expect(page.getByText('Unlocked', { exact: true })).toBeVisible();
-    const commitment = await page.locator('text=commitment:').innerText();
+  // The read-only panel still exposes the caller's own Ministry sub (the value an
+  // operator adds to DISCREETLY_OPERATOR_SUBS).
+  await expect(page.getByText(sub, { exact: false })).toBeVisible();
 
-    // Export -> a JSON download is produced; capture its bytes for re-import.
-    await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
-    const [download] = await Promise.all([
-      page.waitForEvent('download'),
-      page.getByRole('button', { name: /export backup/i }).click(),
-    ]);
-    expect(download.suggestedFilename()).toMatch(/discreetly-identity-.*\.json/);
-    const path = await download.path();
-    const fs = await import('node:fs/promises');
-    const backupJson = await fs.readFile(path, 'utf8');
-    expect(JSON.parse(backupJson)).toHaveProperty('ciphertext');
-
-    // Remove from device (styled confirmation dialog, not a native confirm).
-    await page.getByRole('button', { name: /remove from device/i }).click();
-    await page
-      .getByRole('dialog')
-      .getByRole('button', { name: /^remove$/i })
-      .click();
-    await expect(page.getByText(/no identity yet/i)).toBeVisible();
-
-    // Import the backup file into a clean device.
-    await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
-    const fileChooserPromise = page.waitForEvent('filechooser');
-    await page.getByRole('button', { name: /import backup/i }).click();
-    const chooser = await fileChooserPromise;
-    await chooser.setFiles({
-      name: 'backup.json',
-      mimeType: 'application/json',
-      buffer: Buffer.from(backupJson),
-    });
-
-    // Save the imported identity, then confirm the commitment round-trips.
-    await page.getByRole('button', { name: /save to this device/i }).click();
-    await expect(page.getByText('Unlocked', { exact: true })).toBeVisible();
-    await expect(page.locator('text=commitment:')).toHaveText(commitment);
-
-    // context kept to satisfy fixture signature; localStorage is per-page here.
-    void context;
-  });
+  // Still no vault controls even when signed in.
+  await expect(page.getByRole('button', { name: /create identity/i })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /rotate device/i })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /remove from device/i })).toHaveCount(0);
 });

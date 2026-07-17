@@ -1,11 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import {
-  signIn,
-  createIdentity,
-  resetData,
-  getPrisma,
-  unique,
-} from './harness/helpers.js';
+import { signIn, resetData, getPrisma, unique } from './harness/helpers.js';
 
 /**
  * Per-room history cap. Must match `MAX_ROOM_MESSAGES` in
@@ -17,7 +11,6 @@ const MAX_ROOM_MESSAGES = 1000;
 
 const USER_EMAIL = 'chatter@example.com';
 const ADMIN_EMAIL = 'admin@example.com';
-const ID_PASSWORD = 'test-password-123';
 
 // Browser RLN proving + WS round-trips are slow; give moderation specs headroom.
 test.setTimeout(180_000);
@@ -44,17 +37,9 @@ async function createRoom(opts: { name: string; slug: string }) {
   });
 }
 
-async function unlockInRoom(page: Page): Promise<void> {
-  await page.getByLabel('Password', { exact: true }).fill(ID_PASSWORD);
-  await page.getByRole('button', { name: /^unlock$/i }).click();
-  await expect(page.getByRole('button', { name: /^join$/i })).toBeVisible({ timeout: 30_000 });
-}
-
 async function enterAndJoin(page: Page, roomId: string, email: string): Promise<void> {
   await signIn(page, { email, name: email });
-  await createIdentity(page, ID_PASSWORD);
   await page.goto(`/rooms/${roomId}`);
-  await unlockInRoom(page);
   await page.getByRole('button', { name: /^join$/i }).click();
   await expect(page.getByPlaceholder(/type a message/i)).toBeVisible({ timeout: 30_000 });
 }

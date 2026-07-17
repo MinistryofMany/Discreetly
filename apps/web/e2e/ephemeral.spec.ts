@@ -1,11 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import {
-  signIn,
-  createIdentity,
-  resetData,
-  getPrisma,
-  unique,
-} from './harness/helpers.js';
+import { signIn, resetData, getPrisma, unique } from './harness/helpers.js';
 
 const USER_EMAIL = 'ephemeral-user@example.com';
 
@@ -35,19 +29,9 @@ async function createEphemeralRoom(name: string, slug: string) {
   });
 }
 
-const ID_PASSWORD = 'test-password-123';
-
-async function unlockInRoom(page: Page): Promise<void> {
-  await page.getByLabel('Password', { exact: true }).fill(ID_PASSWORD);
-  await page.getByRole('button', { name: /^unlock$/i }).click();
-  await expect(page.getByRole('button', { name: /^join$/i })).toBeVisible({ timeout: 30_000 });
-}
-
 async function enterAndJoin(page: Page, roomId: string, email = USER_EMAIL): Promise<void> {
   await signIn(page, { email, name: email });
-  await createIdentity(page, ID_PASSWORD);
   await page.goto(`/rooms/${roomId}`);
-  await unlockInRoom(page);
   await page.getByRole('button', { name: /^join$/i }).click();
   await expect(page.getByPlaceholder(/type a message/i)).toBeVisible({ timeout: 30_000 });
 }

@@ -1,14 +1,17 @@
 /**
  * Per-room badge disclosure (Phase 3 / Path B) end-to-end - the INLINE,
- * grant-based, SDK-run model.
+ * grant-based, SDK-run model, on the one-root identity.
  *
- * Each room-join runs the framework-agnostic `@ministryofmany/client` auth-code+PKCE
- * flow at dedicated RP routes (`/api/room-auth/start` + `/api/room-auth/callback`),
- * NOT Auth.js's third-`signIn`-arg merge. The start route requests the room's
- * UNION badge scope plus a `minister_policy` AST; the mock issuer (simulating
- * Minister's grant) discloses ONE minimal satisfying set and mints a FRESH
- * per-room id_token; the callback verifies it and hands it back to the gate,
- * which evaluates the room policy INLINE on that token alone.
+ * A user first signs in GLOBALLY (badge-free `openid profile`); the mock delivers
+ * the `#minister_anon` branch, so the account's anonymous identity DERIVES per
+ * room automatically. Each gated room-join then runs the framework-agnostic
+ * `@ministryofmany/client` auth-code+PKCE flow at dedicated RP routes
+ * (`/api/room-auth/start` + `/api/room-auth/callback`), NOT Auth.js's third-arg
+ * merge. The start route requests the room's UNION badge scope plus a
+ * `minister_policy` AST; the mock issuer (simulating Minister's grant) discloses
+ * ONE minimal satisfying set and mints a FRESH per-room id_token; the callback
+ * verifies it and hands it back to the gate, which evaluates the room policy
+ * INLINE on that token alone.
  *
  * There is NO durable RP badge store: the `ProvenBadge` table has been DROPped,
  * so a later room with a not-yet-disclosed-this-flow badge requires a fresh
@@ -22,7 +25,7 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 import {
-  createIdentity,
+  signIn,
   resetData,
   subFor,
   getPrisma,
@@ -32,8 +35,6 @@ import {
   lastAuthorizeHasMinisterPolicy,
   grantedTypesFor,
 } from './harness/helpers.js';
-
-const ID_PASSWORD = 'test-password-123';
 
 // Browser RLN proving + OIDC round-trips are slow.
 test.setTimeout(180_000);
@@ -73,39 +74,33 @@ async function consent(page: Page, email: string): Promise<void> {
   await page.waitForURL((url) => !url.pathname.startsWith('/oidc'), { timeout: 30_000 });
 }
 
-/** Open a room and unlock the (already-created) local identity to reveal the JoinPanel. */
-async function openRoomUnlocked(page: Page, roomId: string): Promise<void> {
-  await page.goto(`/rooms/${roomId}`);
-  await page.getByLabel('Password', { exact: true }).fill(ID_PASSWORD);
-  await page.getByRole('button', { name: /^unlock$/i }).click();
-}
-
 /**
- * Run the per-room disclosure flow for `roomId`: click the room-scoped sign-in,
- * consent at the mock issuer, and land back on the room with the fresh per-room
- * token picked up. After this returns the JoinPanel shows the "Join" button.
+ * Run the per-room disclosure flow for `roomId` (caller is already signed in
+ * globally, so the identity is derived from the Ministry branch). Open the room,
+ * click the room-scoped disclosure CTA, consent at the mock issuer, and land back
+ * on the room with the fresh per-room token picked up. After this returns the
+ * JoinPanel's "Join" button is enabled. No password / unlock step exists anymore.
  */
 async function discloseForRoom(page: Page, roomId: string, email: string): Promise<void> {
-  await openRoomUnlocked(page, roomId);
-  // The per-room disclosure CTA ("Disclose badges for this room" - rendered
-  // both without any token and alongside an inert Join on a gated room)
-  // starts the SDK flow; it navigates to /api/room-auth/start.
-  const signIn = page.getByRole('button', { name: /disclose badges for this room/i });
-  await signIn.first().click();
+  await page.goto(`/rooms/${roomId}`);
+  // The per-room disclosure CTA ("Disclose badges for this room") starts the SDK
+  // flow; it navigates to /api/room-auth/start.
+  await page
+    .getByRole('button', { name: /disclose badges for this room/i })
+    .first()
+    .click();
   await consent(page, email);
   // Back on the room with `?roomAuthPickup=...`; RoomView picks the fresh
   // per-room token up ONCE and stashes it in sessionStorage keyed by roomId.
-  // Wait for that stash to land BEFORE the unlock reload (the pickup row is
-  // single-use; navigating away before it lands would lose the token).
   await page.waitForURL(new RegExp(`/rooms/${roomId}`), { timeout: 30_000 });
   await page.waitForFunction(
     (key) => window.sessionStorage.getItem(key) !== null,
     `roomToken:${roomId}`,
     { timeout: 30_000 },
   );
-  // Re-unlock (the OIDC round-trip dropped the in-memory identity) to reveal the
-  // Join button; RoomView restores the stashed token on remount.
-  await openRoomUnlocked(page, roomId);
+  // The identity is already derived (from the branch), so Join is enabled once
+  // the fresh per-room token is stashed - no re-unlock reload needed.
+  await expect(page.getByRole('button', { name: /^join$/i })).toBeEnabled({ timeout: 30_000 });
 }
 
 test('join Room(A) discloses only {A}; a later Room(A AND B) needs a fresh disclosure of {A,B} and admits inline', async ({
@@ -127,7 +122,9 @@ test('join Room(A) discloses only {A}; a later Room(A AND B) needs a fresh discl
     },
   });
 
-  await createIdentity(page, ID_PASSWORD);
+  // Global sign-in first: badge-free, but delivers the anon branch so the
+  // identity derives per room.
+  await signIn(page, { email, name: email });
 
   // --- Room A: disclose {age-over-18} and join inline. ---
   await discloseForRoom(page, roomA.id, email);
@@ -180,7 +177,7 @@ test('a CONSTRAINED leaf admits only via the live VC in the fresh token (F-D, in
     accessPolicy: { badge: { type: 'age-over-18', where: { threshold: 18 } } },
   });
 
-  await createIdentity(page, ID_PASSWORD);
+  await signIn(page, { email, name: email });
   await discloseForRoom(page, room.id, email);
   expect(await lastAuthorizeBadgeScopes()).toEqual(['badge:age-over-18']);
   await page.getByRole('button', { name: /^join$/i }).click();
@@ -199,16 +196,13 @@ test('a missing required badge denies inline: no leaf is created', async ({ page
     accessPolicy: { badge: { type: 'invite-code' } },
   });
 
-  // Global (badge-free) header sign-in, then identity.
-  await page.goto('/');
-  await page.getByRole('button', { name: /sign in with minister/i }).first().click();
-  await consent(page, email);
-  await createIdentity(page, ID_PASSWORD);
+  // Global (badge-free) header sign-in; the identity derives from the branch.
+  await signIn(page, { email, name: email });
 
-  // With only the badge-free global session token, Join is inert (disabled)
-  // and the disclosure CTA is the primary action - the badge-free token can
-  // never satisfy the gate, so the UI no longer offers the doomed join.
-  await openRoomUnlocked(page, room.id);
+  // With only the badge-free global session token, Join is inert (disabled) and
+  // the disclosure CTA is the primary action - the badge-free token can never
+  // satisfy the gate, so the UI no longer offers the doomed join.
+  await page.goto(`/rooms/${room.id}`);
   await expect(page.getByRole('button', { name: /^join$/i })).toBeDisabled();
   await expect(
     page.getByRole('button', { name: /disclose badges for this room/i }),
@@ -219,9 +213,7 @@ test('a missing required badge denies inline: no leaf is created', async ({ page
 test('global header sign-in discloses nothing (openid profile only)', async ({ page }) => {
   const email = `disc-global-${Date.now()}@example.com`;
 
-  await page.goto('/');
-  await page.getByRole('button', { name: /sign in with minister/i }).first().click();
-  await consent(page, email);
+  await signIn(page, { email, name: email });
 
   // The top-level header sign-in (Auth.js `ministerProvider`) requests exactly
   // `openid profile` - it owns ONLY the badge-free global login.
@@ -242,7 +234,7 @@ test('OR room: the per-room authorize sends the UNION scope + minister_policy; M
     },
   });
 
-  await createIdentity(page, ID_PASSWORD);
+  await signIn(page, { email, name: email });
   await discloseForRoom(page, room.id, email);
 
   // The authorize carried the UNION of both candidate types AND a minister_policy
@@ -289,7 +281,7 @@ test('transparency grant: a repeat authorize for the same client surfaces the al
     },
   });
 
-  await createIdentity(page, ID_PASSWORD);
+  await signIn(page, { email, name: email });
 
   // Room A: disclose {age-over-18}. The grant now records age-over-18.
   await discloseForRoom(page, roomA.id, email);

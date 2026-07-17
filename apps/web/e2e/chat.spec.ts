@@ -1,11 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import {
-  signIn,
-  createIdentity,
-  resetData,
-  getPrisma,
-  unique,
-} from './harness/helpers.js';
+import { signIn, resetData, getPrisma, unique } from './harness/helpers.js';
 import { API_URL } from './harness/env.js';
 
 const USER_EMAIL = 'chatter@example.com';
@@ -45,24 +39,13 @@ async function createRoom(opts: {
   });
 }
 
-const ID_PASSWORD = 'test-password-123';
-
 /**
- * Unlock the stored identity from within a room (the in-memory unlock does not
- * survive a full-page navigation, so the room embeds its own identity panel).
+ * Sign in (the mock delivers the anon branch), open the room so the identity
+ * auto-derives, and join (open policy). No password, no unlock step.
  */
-async function unlockInRoom(page: Page): Promise<void> {
-  await page.getByLabel('Password', { exact: true }).fill(ID_PASSWORD);
-  await page.getByRole('button', { name: /^unlock$/i }).click();
-  await expect(page.getByRole('button', { name: /^join$/i })).toBeVisible({ timeout: 30_000 });
-}
-
-/** Sign in, make an identity, open the room, unlock, and join (open policy). */
 async function enterAndJoin(page: Page, roomId: string, email = USER_EMAIL): Promise<void> {
   await signIn(page, { email, name: email });
-  await createIdentity(page, ID_PASSWORD);
   await page.goto(`/rooms/${roomId}`);
-  await unlockInRoom(page);
   await page.getByRole('button', { name: /^join$/i }).click();
   // After joining, the composer appears.
   await expect(page.getByPlaceholder(/type a message/i)).toBeVisible({ timeout: 30_000 });
@@ -126,15 +109,15 @@ test('AES room: encrypted send round-trips to decrypted text', async ({ page }) 
   });
 
   await signIn(page, { email: USER_EMAIL, name: USER_EMAIL });
-  await createIdentity(page, ID_PASSWORD);
   await page.goto(`/rooms/${room.id}`);
 
-  // Unlock the room with its password (derives the AES key client-side).
+  // Unlock the ROOM with its password (derives the AES key client-side). This is
+  // the room-encryption key, not an identity vault - the identity itself is
+  // derived from the Ministry branch with no password.
   await page.getByLabel(/enter the room password/i).fill('room-secret');
   await page.getByRole('button', { name: /unlock room/i }).click();
 
-  // Unlock the identity (embedded panel), then join and send.
-  await unlockInRoom(page);
+  // The identity auto-derives; join and send.
   await page.getByRole('button', { name: /^join$/i }).click();
   await expect(page.getByPlaceholder(/type a message/i)).toBeVisible({ timeout: 30_000 });
 

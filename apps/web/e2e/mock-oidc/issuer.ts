@@ -17,6 +17,33 @@ import { type PolicyNode, isBadgeLeaf, isAllOf, isAnyOf, isAtLeast } from '@disc
 export const MOCK_CLIENT_ID = 'discreetly_dev';
 
 /**
+ * The `minister_anon_epoch` the browser flow stamps on every id_token and the
+ * epoch the delivered anon-identity branch is keyed at. Live Minister signs this
+ * integer (>= 1) into the id_token; the RP's client-side handoff
+ * (`minister-anon.ts`) treats it as the SOLE authority on adopt/re-key. A re-key
+ * (a NEW branch at a strictly greater epoch) is exercised via `mintIdToken({
+ * epoch })` and the API's epoch-gated `membership.rotate`, not this browser flow.
+ */
+const DEFAULT_ANON_EPOCH = 1;
+
+/**
+ * The 32-byte per-app anon-identity branch Minister derives for this RP and
+ * delivers on the OIDC redirect fragment. Deterministic per (sub, epoch) so a
+ * test can reproduce the exact identity the app derives, and so the SAME user
+ * always derives the SAME identity (the one-root invariant) while a bumped epoch
+ * yields a DIFFERENT branch (a re-key). Mirrors live Minister's per-app-secret
+ * contract: 32 bytes, delivered base64url as `#minister_anon=v1.<43 chars>`.
+ */
+export function branchForSub(sub: string, epoch: number): Uint8Array {
+  return new Uint8Array(createHash('sha256').update(`minister-anon|${sub}|${epoch}`).digest());
+}
+
+/** The `minister_anon=v1.<43 base64url>` fragment param for (sub, epoch). */
+function anonFragmentParam(sub: string, epoch: number): string {
+  return `minister_anon=v1.${Buffer.from(branchForSub(sub, epoch)).toString('base64url')}`;
+}
+
+/**
  * Derive the badge VC issuer DID from the runtime OIDC issuer port. The SDK
  * verifier (`@ministryofmany/client`) expects the badge `iss` to equal
  * `didFromIssuer(issuer)` === `did:web:localhost%3A<port>` (the colon in the
@@ -115,6 +142,12 @@ export interface MintOpts {
   name?: string;
   badges?: MockBadge[];
   nonce?: string;
+  /**
+   * The `minister_anon_epoch` claim to sign onto the token (integer >= 1). Omit
+   * to sign no epoch claim. The browser flow always passes `DEFAULT_ANON_EPOCH`;
+   * the re-key test mints a strictly-greater epoch to authorize a leaf swap.
+   */
+  epoch?: number;
 }
 
 /** Mint an id_token directly (for non-browser checks). */
@@ -126,6 +159,7 @@ export async function mintIdToken(opts: MintOpts): Promise<string> {
   const builder = new SignJWT({
     nonce: opts.nonce,
     ...(opts.name !== undefined && { name: opts.name }),
+    ...(opts.epoch !== undefined && { minister_anon_epoch: opts.epoch }),
     minister_badges,
   })
     .setProtectedHeader({ alg: 'EdDSA', kid: kidForPort(port), typ: 'JWT' })
@@ -159,6 +193,8 @@ interface IssuedCode {
   nonce?: string;
   codeChallenge: string;
   redirectUri: string;
+  /** The `minister_anon_epoch` this grant's id_token is signed with. */
+  anonEpoch: number;
 }
 
 const pending = new Map<string, PendingAuth>(); // state -> pending auth
@@ -416,6 +452,18 @@ async function handle(req: IncomingMessage, res: ServerResponse, issuer: string)
     return json(res, { sub, badgeTypes: types });
   }
 
+  // Test-only: mint an id_token for `sub` at an explicit `minister_anon_epoch`,
+  // signed by THIS running issuer's key (so the API verifier accepts it). The
+  // re-key test uses it to authorize the epoch-gated `membership.rotate` with a
+  // strictly-greater epoch than the one the browser join stamped - the app has
+  // no browser rotate control, so the swap primitive is driven directly here.
+  if (path === '/test/id-token') {
+    const sub = url.searchParams.get('sub') ?? '';
+    const epoch = Number(url.searchParams.get('epoch') ?? '1');
+    const idToken = await mintIdToken({ issuer, sub, epoch });
+    return json(res, { id_token: idToken });
+  }
+
   if (path === '/oidc/userinfo') {
     // Minimal userinfo; the app reads claims from the id_token, not here.
     return json(res, { sub: 'mock' });
@@ -594,10 +642,18 @@ function finishLogin(
     nonce: p.nonce,
     codeChallenge: p.codeChallenge,
     redirectUri: p.redirectUri,
+    anonEpoch: DEFAULT_ANON_EPOCH,
   });
   const location = new URL(p.redirectUri);
   location.searchParams.set('code', code);
   location.searchParams.set('state', state);
+  // Deliver the Ministry anon-identity branch as a REAL HTTP 3xx `Location`
+  // fragment, exactly as live Minister does. The fragment never reaches a server
+  // (fragments are not sent in HTTP) and survives the RP's server-side callback
+  // hops (Auth.js's callback -> landing page, or the room-auth callback ->
+  // room), where the SDK's `extractMinisterAppSecret` captures + scrubs it. Any
+  // CLIENT-side redirect in that chain would destroy it - so this must be a 3xx.
+  location.hash = anonFragmentParam(user.sub, DEFAULT_ANON_EPOCH);
   res.writeHead(302, { location: location.toString() });
   res.end();
 }
@@ -638,6 +694,7 @@ async function token(req: IncomingMessage, res: ServerResponse, issuer: string):
     name: grant.name,
     badges: grant.badges,
     nonce: grant.nonce,
+    epoch: grant.anonEpoch,
   });
 
   res.writeHead(200, { 'content-type': 'application/json' });

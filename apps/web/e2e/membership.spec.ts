@@ -1,16 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
-import {
-  signIn,
-  createIdentity,
-  resetData,
-  subFor,
-  getPrisma,
-  unique,
-} from './harness/helpers.js';
+import { signIn, resetData, subFor, getPrisma, unique } from './harness/helpers.js';
 import { joinNullifier } from './harness/gate.js';
 
-const ID_PASSWORD = 'test-password-123';
-const USER_EMAIL = 'rotator@example.com';
+const USER_EMAIL = 'member@example.com';
 
 // Browser RLN proving + WS round-trips are slow; give these specs headroom.
 test.setTimeout(180_000);
@@ -26,7 +18,7 @@ async function createRoom(opts: { name: string; slug: string }) {
       name: opts.name,
       slug: opts.slug,
       rlnIdentifier: String(Date.now()) + String(Math.floor(Math.random() * 1000)),
-      rateLimit: 1000,
+      rateLimit: 3_600_000,
       userMessageLimit: 100,
       visibility: 'PUBLIC',
       encryption: 'PLAINTEXT',
@@ -35,106 +27,41 @@ async function createRoom(opts: { name: string; slug: string }) {
   });
 }
 
-/** Unlock the stored identity from within a room, waiting for the Join button. */
-async function unlockInRoom(page: Page): Promise<void> {
-  await page.getByLabel('Password', { exact: true }).fill(ID_PASSWORD);
-  await page.getByRole('button', { name: /^unlock$/i }).click();
-  await expect(page.getByRole('button', { name: /^join$/i })).toBeVisible({ timeout: 30_000 });
-}
-
-/** Sign in, make an identity, open the room, unlock, and join (open policy). */
+/**
+ * Sign in (the mock delivers the anon branch), open the room so the identity
+ * auto-derives, and join. No password, no unlock: the identity is derived per
+ * room from the Ministry branch.
+ */
 async function enterAndJoin(page: Page, roomId: string, email = USER_EMAIL): Promise<void> {
   await signIn(page, { email, name: email });
-  await createIdentity(page, ID_PASSWORD);
   await page.goto(`/rooms/${roomId}`);
-  await unlockInRoom(page);
   await page.getByRole('button', { name: /^join$/i }).click();
   await expect(page.getByPlaceholder(/type a message/i)).toBeVisible({ timeout: 30_000 });
 }
 
-test('membership.rotate swaps the leaf for the same membership and activates the new identity', async ({
+test('one leaf per membership: re-entering a joined room never creates a second leaf', async ({
   page,
 }) => {
   const db = getPrisma();
-  const room = await createRoom({ name: 'Rotate Room', slug: unique('rotate') });
+  const room = await createRoom({ name: 'Rejoin Room', slug: unique('rejoin') });
 
   await enterAndJoin(page, room.id);
-
-  // One leaf exists; capture the original (membership, IC).
-  await expect.poll(() => db.membershipLeaf.count({ where: { roomId: room.id } })).toBe(1);
-  const before = await db.membershipLeaf.findFirstOrThrow({ where: { roomId: room.id } });
-  const membership = await db.membership.findFirstOrThrow({ where: { roomId: room.id } });
-  const oldIc = before.identityCommitment;
-
-  // Open the Rotate dialog and exercise the Cancel button first.
-  await page.getByRole('button', { name: /rotate device/i }).click();
-  const dialog = page.getByRole('dialog');
-  await expect(dialog.getByRole('heading', { name: /rotate device identity/i })).toBeVisible();
-  await dialog.getByRole('button', { name: /^cancel$/i }).click();
-  await expect(dialog).toBeHidden();
-
-  // Re-open and rotate for real, exercising the password field + Rotate button.
-  await page.getByRole('button', { name: /rotate device/i }).click();
-  const dialog2 = page.getByRole('dialog');
-  await dialog2.getByLabel(/new encryption password/i).fill('rotated-password-456');
-  await dialog2.getByRole('button', { name: /^rotate$/i }).click();
-  await expect(page.getByText(/identity rotated for this room/i)).toBeVisible({ timeout: 60_000 });
-  await expect(dialog2).toBeHidden();
-
-  // DB truth: still exactly one leaf, under the SAME membership/joinNullifier,
-  // but the IC has changed (the old leaf is gone, the new one is present).
-  await expect.poll(() => db.membershipLeaf.count({ where: { roomId: room.id } })).toBe(1);
-  const after = await db.membershipLeaf.findFirstOrThrow({ where: { roomId: room.id } });
-  expect(after.membershipId).toBe(membership.id);
-  expect(after.identityCommitment).not.toBe(oldIc);
-  expect(
-    await db.membershipLeaf.count({ where: { roomId: room.id, identityCommitment: oldIc } }),
-  ).toBe(0);
-
-  // The local active identity is now the new one: the composer is still shown
-  // (the room considers the user joined via the new identity's rateCommitment).
-  await expect(page.getByPlaceholder(/type a message/i)).toBeVisible();
-});
-
-test('device-limit: a second device join is refused when maxDevices is 1', async ({ page }) => {
-  const db = getPrisma();
-  const room = await createRoom({ name: 'Solo Room', slug: unique('solo') });
-
-  // First device joins fine.
-  await enterAndJoin(page, room.id);
   await expect.poll(() => db.membershipLeaf.count({ where: { roomId: room.id } })).toBe(1);
 
-  // Provision a SECOND local device identity for the SAME signed-in user. The
-  // identity panel only exposes "Remove from device" once unlocked, so unlock
-  // first, remove (via the styled confirmation dialog), then create a fresh
-  // identity. The Minister sub is unchanged, so it maps to the same membership.
-  await page.goto('/identity');
-  await page.getByLabel('Password', { exact: true }).fill(ID_PASSWORD);
-  await page.getByRole('button', { name: /^unlock$/i }).click();
-  await expect(page.getByText(/^Unlocked$/)).toBeVisible({ timeout: 15_000 });
-  await page.getByRole('button', { name: /remove from device/i }).click();
-  await page
-    .getByRole('dialog')
-    .getByRole('button', { name: /^remove$/i })
-    .click();
-  await expect(page.getByRole('button', { name: /^create identity$/i })).toBeVisible({
-    timeout: 15_000,
-  });
-  await createIdentity(page, ID_PASSWORD);
-
-  // Return to the room and unlock the new device identity.
+  // Leave and re-open the room: the identity is DERIVED deterministically from
+  // the same branch, so the app recognizes the existing membership and shows the
+  // composer straight away (already joined) - never a second Join / second leaf.
+  await page.goto('/');
   await page.goto(`/rooms/${room.id}`);
-  await unlockInRoom(page);
-
-  // Joining again hits the room's device limit (same Minister sub => same
-  // membership, which already has its one allowed device).
-  await page.getByRole('button', { name: /^join$/i }).click();
-  await expect(page.getByText(/reached its device limit for you/i)).toBeVisible({
-    timeout: 30_000,
-  });
-
-  // No second leaf was created.
-  await expect.poll(() => db.membershipLeaf.count({ where: { roomId: room.id } })).toBe(1);
+  await expect(page.getByPlaceholder(/type a message/i)).toBeVisible({ timeout: 30_000 });
+  // The Join affordance is gone (already a member on this deterministic identity).
+  await expect(page.getByRole('button', { name: /^join$/i })).toHaveCount(0);
+  await expect
+    .poll(() => db.membershipLeaf.count({ where: { roomId: room.id } }), {
+      timeout: 3_000,
+      intervals: [250, 250, 250],
+    })
+    .toBe(1);
 });
 
 test('banned-join: a banned membership cannot join and creates no leaf', async ({ page }) => {
@@ -149,11 +76,9 @@ test('banned-join: a banned membership cannot join and creates no leaf', async (
     data: { roomId: room.id, joinNullifier: jn, status: 'BANNED' },
   });
 
-  // Sign in as that user, create an identity, and attempt to join.
+  // Sign in as that user (identity auto-derives) and attempt to join.
   await signIn(page, { email, name: email });
-  await createIdentity(page, ID_PASSWORD);
   await page.goto(`/rooms/${room.id}`);
-  await unlockInRoom(page);
   await page.getByRole('button', { name: /^join$/i }).click();
 
   // The banned reason is surfaced and no leaf is ever created.

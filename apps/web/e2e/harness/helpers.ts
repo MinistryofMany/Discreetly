@@ -4,10 +4,10 @@
  */
 import { expect, type Page } from '@playwright/test';
 import { getPrisma, resetData } from './db.js';
-import { subFor } from '../mock-oidc/issuer.js';
+import { subFor, branchForSub } from '../mock-oidc/issuer.js';
 import { MOCK_ISSUER } from './env.js';
 
-export { getPrisma, resetData, subFor };
+export { getPrisma, resetData, subFor, branchForSub };
 
 export interface AuthorizeLogEntry {
   state: string;
@@ -76,6 +76,12 @@ export interface SignInOptions {
  * Sign in via the mock Minister OIDC issuer. Clicks the in-app sign-in button
  * (Auth.js handles CSRF + PKCE/state/nonce), fills the mock consent form, and
  * waits for the session to land back on the app. Returns the pairwise sub.
+ *
+ * The mock stamps a `#minister_anon` branch on its redirect and a signed
+ * `minister_anon_epoch` on the id_token, so the app captures the fragment on the
+ * callback landing page and DERIVES the account's anonymous identity per room -
+ * there is no password vault, no create/unlock step. After this returns, opening
+ * any room auto-derives that identity and the Join button appears.
  */
 export async function signIn(page: Page, opts: SignInOptions): Promise<string> {
   await page.goto('/');
@@ -99,14 +105,4 @@ export async function signIn(page: Page, opts: SignInOptions): Promise<string> {
   await page.waitForURL((url) => !url.pathname.startsWith('/oidc'), { timeout: 30_000 });
   await expect(page.getByRole('button', { name: /sign out/i })).toBeVisible({ timeout: 30_000 });
   return subFor(opts.email);
-}
-
-/** Create + unlock a fresh identity on the current page via the identity panel. */
-export async function createIdentity(page: Page, password = 'test-password-123'): Promise<void> {
-  await page.goto('/identity');
-  await page.getByLabel('Password', { exact: true }).fill(password);
-  // Creation mints an unrecoverable password, so the panel demands a match.
-  await page.getByLabel('Confirm password', { exact: true }).fill(password);
-  await page.getByRole('button', { name: /^create identity$/i }).click();
-  await expect(page.getByText(/^Unlocked$/)).toBeVisible({ timeout: 15_000 });
 }
