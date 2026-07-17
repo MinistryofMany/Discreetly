@@ -153,7 +153,7 @@ export function buildAndValidate(
 
   const result = policyNodeSchema.safeParse(serialized);
   if (!result.success) {
-    return { ok: false, error: result.error.issues.map((i) => i.message).join('; ') };
+    return { ok: false, error: result.error.issues.map((i: { message: string }) => i.message).join('; ') };
   }
 
   return { ok: true, policy: result.data };
