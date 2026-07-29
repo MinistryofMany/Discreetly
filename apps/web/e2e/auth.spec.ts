@@ -13,7 +13,7 @@ test('sign in via mock OIDC shows the anonymous signed-in state, then sign out',
   // Home shows the signed-in state but discloses no identifier: the account
   // name and pairwise sub are intentionally never rendered.
   await expect(page.getByText('Signed in.', { exact: true })).toBeVisible();
-  await expect(page.getByText(/you are anonymous/i)).toBeVisible();
+  await expect(page.getByText(/rooms know you as a pseudonym/i)).toBeVisible();
   await expect(page.getByText('Alice', { exact: true })).toHaveCount(0);
   await expect(page.getByText(`sub: ${sub}`)).toHaveCount(0);
 
