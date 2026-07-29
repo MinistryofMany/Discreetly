@@ -1,9 +1,21 @@
 import { test, expect, type Locator } from '@playwright/test';
 import { signIn, resetData, subFor, getPrisma, unique } from './harness/helpers.js';
+import { slugify } from '../src/lib/admin-room-form.js';
 
 /** Fill the input whose containing div holds a <label> with the given text. */
 function fieldByLabel(scope: Locator, label: string): Locator {
   return scope.locator(`div:has(> label:text-is("${label}")) input`);
+}
+
+/**
+ * Type a room name and return the slug the dialog derives from it. The Slug
+ * field is read-only and filled from the Name, so a spec never types a slug.
+ */
+async function fillRoomName(dialog: Locator, name: string): Promise<string> {
+  await fieldByLabel(dialog, 'Name').fill(name);
+  const slug = slugify(name);
+  await expect(fieldByLabel(dialog, 'Slug')).toHaveValue(slug);
+  return slug;
 }
 
 const ADMIN_EMAIL = 'admin@example.com';
@@ -31,11 +43,9 @@ test('admin: create (open + custom policy), edit, delete room', async ({ page })
   const db = getPrisma();
 
   // --- Create with the Open-policy shortcut ---
-  const openSlug = unique('open');
   await page.getByRole('button', { name: /\+ create room/i }).click();
   const dialog = page.getByRole('dialog');
-  await fieldByLabel(dialog, 'Name').fill('Open Room');
-  await fieldByLabel(dialog, 'Slug').fill(openSlug);
+  const openSlug = await fillRoomName(dialog, `Open Room ${unique('open')}`);
   // Default form already uses the open policy.
   await dialog.getByRole('button', { name: /create room/i }).click();
   // Dialog closes on success; assert DB truth (more robust than a toast race).
@@ -47,11 +57,9 @@ test('admin: create (open + custom policy), edit, delete room', async ({ page })
   expect(openRoom.visibility).toBe('PUBLIC');
 
   // --- Create with a custom policy built in the boolean builder ---
-  const gatedSlug = unique('gated');
   await page.getByRole('button', { name: /\+ create room/i }).click();
   const dialog2 = page.getByRole('dialog');
-  await fieldByLabel(dialog2, 'Name').fill('Gated Room');
-  await fieldByLabel(dialog2, 'Slug').fill(gatedSlug);
+  const gatedSlug = await fillRoomName(dialog2, `Gated Room ${unique('gated')}`);
   await dialog2.getByRole('button', { name: /build custom policy/i }).click();
   // Root is allOf; add a badge leaf (defaults to email-domain).
   await dialog2.getByRole('button', { name: /^\+ badge$/i }).click();
@@ -70,6 +78,8 @@ test('admin: create (open + custom policy), edit, delete room', async ({ page })
   await row.getByRole('button', { name: /^edit$/i }).click();
   const editDialog = page.getByRole('dialog');
   await fieldByLabel(editDialog, 'Name').fill('Gated Room Renamed');
+  // A rename must not reassign the slug - it is the room's fixed identifier.
+  await expect(fieldByLabel(editDialog, 'Slug')).toHaveValue(gatedSlug);
   await editDialog.getByRole('button', { name: /save changes/i }).click();
   await expect(editDialog).toBeHidden();
   await expect
@@ -170,11 +180,9 @@ test('admin: audit log reflects own actions and filters', async ({ page }) => {
   await page.goto('/admin');
 
   // Create a room to generate a ROOM_CREATE audit row.
-  const slug = unique('auditroom');
   await page.getByRole('button', { name: /\+ create room/i }).click();
   const dialog = page.getByRole('dialog');
-  await fieldByLabel(dialog, 'Name').fill('Audit Room');
-  await fieldByLabel(dialog, 'Slug').fill(slug);
+  const slug = await fillRoomName(dialog, `Audit Room ${unique('auditroom')}`);
   await dialog.getByRole('button', { name: /create room/i }).click();
   await expect(page.getByText('Room created')).toBeVisible();
   const room = await db.room.findUniqueOrThrow({ where: { slug } });
